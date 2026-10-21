@@ -1,0 +1,7 @@
+# Movie recap tool — Streamlit app dependencies
+# (Streamlit Community Cloud installs these automatically on deploy)
+streamlit>=1.30
+faster-whisper>=1.0.0
+gTTS>=2.5.0
+requests>=2.30
+numpy>=1.24
