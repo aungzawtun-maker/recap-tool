@@ -49,7 +49,7 @@ def _tts_gtts(text, out_path):
     gTTS(text=text, lang="my").save(out_path)
 
 
-def _tts_elevenlabs(text, out_path, api_key, voice_id, model_id="eleven_multilingual_v2"):
+def _tts_elevenlabs(text, out_path, api_key, voice_id, model_id="eleven_v3"):
     """ElevenLabs API - ကိုယ်ပိုင် API key လိုတယ် (elevenlabs.io မှာ အခမဲ့ စမ်းလို့ရ)"""
     import requests
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
@@ -66,6 +66,15 @@ def _tts_elevenlabs(text, out_path, api_key, voice_id, model_id="eleven_multilin
         f.write(r.content)
 
 
+def _tts_edgetts(text, out_path, voice="my-MM-ThihaNeural"):
+    """Microsoft Edge TTS — မြန်မာ မိခင်ဘာသာအသံတွေ (Thiha ♂ / Nilar ♀), အခမဲ့, key မလို။
+    မှတ်ချက်: Muse ရဲ့ VM ကနေ Microsoft endpoint ပိတ်ထားပေမဲ့ Streamlit Cloud ကနေ ရနိုင်တယ်။"""
+    import asyncio, edge_tts
+    async def _run():
+        await edge_tts.Communicate(text, voice).save(out_path)
+    asyncio.run(_run())
+
+
 def tts_all(script, engine, workdir, api_key="", voice_id="", log=print):
     """script = [(start_sec, text), ...] -> [(mp3_path, start, duration), ...]"""
     lines_dir = os.path.join(workdir, "lines")
@@ -75,6 +84,8 @@ def tts_all(script, engine, workdir, api_key="", voice_id="", log=print):
         p = os.path.join(lines_dir, f"line_{i:02d}.mp3")
         if engine == "elevenlabs":
             _tts_elevenlabs(text, p, api_key, voice_id)
+        elif engine == "edgetts":
+            _tts_edgetts(text, p, voice_id or "my-MM-ThihaNeural")
         else:
             _tts_gtts(text, p)
         dur = probe_duration(p)

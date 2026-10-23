@@ -19,11 +19,20 @@ os.makedirs(WORKDIR, exist_ok=True)
 st.sidebar.header("🔊 အသံ (TTS) ရွေးမယ်")
 engine = st.sidebar.selectbox(
     "TTS engine",
-    ["gtts", "elevenlabs"],
-    format_func=lambda e: "gTTS (အခမဲ့၊ အသံစက်ဆန်)" if e == "gtts"
-    else "ElevenLabs (API key လို၊ အသံကောင်း)",
+    ["gtts", "edgetts", "elevenlabs"],
+    format_func=lambda e: {
+        "gtts": "gTTS (အခမဲ့၊ အသံစက်ဆန်)",
+        "edgetts": "Edge TTS (မြန်မာ Thiha/Nilar၊ အခမဲ့)",
+        "elevenlabs": "ElevenLabs (API key လို၊ အသံကောင်း)",
+    }[e],
 )
 api_key, voice_id = "", ""
+if engine == "edgetts":
+    voice_id = st.sidebar.selectbox(
+        "အသံ ရွေးပါ",
+        ["my-MM-ThihaNeural", "my-MM-NilarNeural"],
+        format_func=lambda v: "Thiha (အမျိုးသား)" if "Thiha" in v else "Nilar (အမျိုးသမီး)",
+    )
 if engine == "elevenlabs":
     api_key = st.sidebar.text_input("ElevenLabs API key", type="password",
                                     help="elevenlabs.io → Profile → API Keys")
