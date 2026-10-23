@@ -40,25 +40,51 @@ if engine == "elevenlabs":
         "Voice ID", value="21m00Tcm4TlvDq8ikWAM",
         help="ElevenLabs Voices ထဲက ကြိုက်တဲ့ အသံရဲ့ ID")
 
-# ---------- Sidebar: Script AI (OpenRouter) ----------
+# ---------- Sidebar: Script AI (provider ရွေးနိုင်, auto-fallback) ----------
 st.sidebar.header("🤖 Script AI")
-st.sidebar.caption("Transcript ကနေ ဟာသ script အလိုအလျောက် ရေးဖို့")
-or_key = st.sidebar.text_input("OpenRouter API key", type="password",
-                               help="openrouter.ai → Keys → Create Key")
-or_model = st.sidebar.selectbox(
-    "AI model",
-    ["google/gemma-4-31b-it:free",
-     "google/gemma-4-26b-a4b-it:free",
-     "nvidia/nemotron-3-super-120b-a12b:free"],
-    format_func=lambda m: ("Gemma 4 31B (အခမဲ့)" if "31b" in m
-                           else "Gemma 4 26B (အခမဲ့)" if "gemma" in m
-                           else "Nemotron 120B (အခမဲ့)"),
+st.sidebar.caption("Transcript ကနေ ဟာသ script အလိုအလျောက် ရေးဖို့ — "
+                   "provider/model တစ်ခု မရရင် နောက်တစ်ခု အလိုအလျောက် ပြောင်းစမ်းပေးမယ်")
+ai_provider = st.sidebar.selectbox(
+    "AI provider",
+    ["openrouter", "groq", "nvidia"],
+    format_func=lambda p: {
+        "openrouter": "OpenRouter (အခမဲ့ model အများ)",
+        "groq": "Groq (မြန်၊ အခမဲ့)",
+        "nvidia": "NVIDIA (အခမဲ့)",
+    }[p],
 )
-or_custom = st.sidebar.text_input(
+ai_keys = {
+    "openrouter": st.sidebar.text_input(
+        "OpenRouter API key", type="password",
+        help="openrouter.ai → Keys → Create Key"),
+    "groq": st.sidebar.text_input(
+        "Groq API key", type="password",
+        help="groq.com → Sign in → API Keys → Create API Key"),
+    "nvidia": st.sidebar.text_input(
+        "NVIDIA API key", type="password",
+        help="build.nvidia.com → model တစ်ခုခု → Get API Key"),
+}
+MODEL_LABELS = {
+    "google/gemma-4-31b-it:free": "Gemma 4 31B (အခမဲ့)",
+    "google/gemma-4-26b-a4b-it:free": "Gemma 4 26B (အခမဲ့)",
+    "openrouter/free": "အခမဲ့ ရတဲ့ model အလိုအလျောက်",
+    "llama-3.3-70b-versatile": "Llama 3.3 70B",
+    "openai/gpt-oss-120b": "GPT-OSS 120B",
+    "llama-3.1-8b-instant": "Llama 3.1 8B (မြန်)",
+    "nvidia/nemotron-3-super-120b-a12b": "Nemotron 120B",
+    "google/gemma-4-31b-it": "Gemma 4 31B",
+    "meta/llama-3.3-70b-instruct": "Llama 3.3 70B",
+}
+ai_model = st.sidebar.selectbox(
+    "AI model",
+    pipeline.LLM_PROVIDERS[ai_provider][1],
+    format_func=lambda m: MODEL_LABELS.get(m, m),
+)
+ai_custom = st.sidebar.text_input(
     "Model ID ကိုယ်တိုင်ထည့် (ချန်ထားလို့ရ)",
-    help="openrouter.ai/models ထဲက ကြိုက်တဲ့ model ရဲ့ ID — ဖြည့်ရင် အပေါ်က ရွေးတာကို ကျော်မယ်")
-if or_custom.strip():
-    or_model = or_custom.strip()
+    help="ဖြည့်ရင် အပေါ်က ရွေးထားတဲ့ model အစား ဒါကို အရင် စမ်းမယ်")
+if ai_custom.strip():
+    ai_model = ai_custom.strip()
 
 # ---------- အဆင့် ၁: ဗီဒီယို upload ----------
 uploaded = st.file_uploader("ဗီဒီယို ဖိုင် တင်ပါ (mp4)", type=["mp4", "mov", "mkv"])
@@ -83,13 +109,16 @@ if "transcript" in st.session_state:
     for s, e, t in st.session_state["transcript"]:
         st.text(f"[{s:05.1f} - {e:05.1f}] {t}")
     if st.button("🤖 Script အလိုအလျောက် ရေး (AI)"):
-        if not or_key:
-            st.error("Sidebar မှာ OpenRouter API key အရင် ထည့်ပါ")
+        keys = {p: k.strip() for p, k in ai_keys.items() if k.strip()}
+        if not keys:
+            st.error("Sidebar မှာ AI key တစ်ခု ထည့်ပါ (OpenRouter / Groq / NVIDIA တစ်ခုခု)")
         else:
-            with st.spinner("AI က script ရေးနေတယ်..."):
-                st.session_state["script_box"] = pipeline.write_script(
-                    st.session_state["transcript"], or_key, or_model)
-            st.success("Script ရပြီ — အောက်မှာ ပြင်လို့ရတယ်")
+            with st.spinner("AI က script ရေးနေတယ်... (model တစ်ခု မရရင် နောက်တစ်ခု စမ်းနေမယ်)"):
+                script_out, used_model = pipeline.write_script(
+                    st.session_state["transcript"],
+                    provider=ai_provider, keys=keys, model=ai_model)
+                st.session_state["script_box"] = script_out
+            st.success(f"Script ရပြီ — သုံးတဲ့ model: {used_model} (အောက်မှာ ပြင်လို့ရတယ်)")
 
 # ---------- အဆင့် ၃: Script ပြင်ရေး ----------
 st.subheader("✍️ Recap Script")

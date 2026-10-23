@@ -136,7 +136,7 @@ def build_video(video_path, files, workdir, log=print):
     return final
 
 
-# ---------------- Auto script (LLM via OpenRouter) ----------------
+# ---------------- Auto script (LLM, multi-provider + auto-fallback) ----------------
 
 SCRIPT_PROMPT = """သင်က မြန်မာဟာသ movie recap စာရေးဆရာပါ။
 အောက်က ဗီဒီယို transcript (timestamp နဲ့ပါ) ကို ဖတ်ပြီး ရယ်ရတဲ့ မြန်မာ နောက်ခံစကားပြော script ရေးပါ။
@@ -154,21 +154,82 @@ Transcript:
 """
 
 
-def write_script(segments, api_key, model="google/gemma-4-31b-it:free"):
-    """OpenRouter ကနေ LLM နဲ့ transcript ကို recap script ပြောင်း။
-    segments = [(start, end, text), ...] -> "start | text" စာကြောင်းများ ပြန်ပေး။
-    (Google AI Studio က မြန်မာ region ပိတ်ထားလို့ OpenRouter ကို သုံးတယ်)"""
+# provider -> (API base URL, [model အစဉ် — ပထမဟာ မရရင် နောက်တစ်ခု စမ်းမယ်])
+# အကုန်လုံး OpenAI-compatible chat/completions ပုံစံ သုံးကြတယ်။
+LLM_PROVIDERS = {
+    "openrouter": (
+        "https://openrouter.ai/api/v1",
+        ["google/gemma-4-31b-it:free",
+         "google/gemma-4-26b-a4b-it:free",
+         "openrouter/free"],
+    ),
+    "groq": (
+        "https://api.groq.com/openai/v1",
+        ["llama-3.3-70b-versatile",
+         "openai/gpt-oss-120b",
+         "llama-3.1-8b-instant"],
+    ),
+    "nvidia": (
+        "https://integrate.api.nvidia.com/v1",
+        ["nvidia/nemotron-3-super-120b-a12b",
+         "google/gemma-4-31b-it",
+         "meta/llama-3.3-70b-instruct"],
+    ),
+}
+
+
+def _llm_once(base_url, api_key, provider, model, prompt):
     import requests
-    transcript = "\n".join(f"[{s:.0f}s] {t}" for s, e, t in segments)
+    headers = {"Authorization": f"Bearer {api_key}",
+               "Content-Type": "application/json"}
+    if provider == "openrouter":
+        headers["X-Title"] = "Movie Recap Tool"
     r = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}",
-                 "Content-Type": "application/json"},
+        f"{base_url}/chat/completions",
+        headers=headers,
         json={"model": model,
-              "messages": [{"role": "user",
-                            "content": SCRIPT_PROMPT.format(transcript=transcript)}]},
-        timeout=120,
+              "messages": [{"role": "user", "content": prompt}]},
+        timeout=90,
     )
     if r.status_code != 200:
-        raise RuntimeError(f"OpenRouter error {r.status_code}: {r.text[:200]}")
+        raise RuntimeError(f"{r.status_code}: {r.text[:120]}")
     return r.json()["choices"][0]["message"]["content"].strip()
+
+
+def write_script(segments, provider="openrouter", keys=None, model=""):
+    """Transcript ကို LLM နဲ့ recap script ပြောင်း။
+    segments = [(start, end, text), ...]
+    keys = {"openrouter": "...", "groq": "...", "nvidia": "..."} (ရှိတဲ့ key ပဲ ထည့်)
+    ရွေးထားတဲ့ provider/model ကနေ စ; မရရင် (404/5xx) နောက် model၊
+    429 ဆို ၈ စက္ကန့် စောင့် တစ်ခါ ပြန်စမ်း၊ provider ကုန်ရင် key ရှိတဲ့
+    နောက် provider ကို ဆက်စမ်း။ အောင်ရင် (script, "provider/model") ပြန်ပေး။
+    (Google AI Studio က မြန်မာ region ပိတ်ထားလို့ တိုက်ရိုက် မသုံးပါ)"""
+    import time
+    keys = {p: k for p, k in (keys or {}).items() if k}
+    if not keys:
+        raise RuntimeError("AI key တစ်လုံးမှ မထည့်ရသေးပါ — sidebar မှာ key ထည့်ပါ")
+    if provider not in keys:
+        provider = next(iter(keys))
+    transcript = "\n".join(f"[{s:.0f}s] {t}" for s, e, t in segments)
+    prompt = SCRIPT_PROMPT.format(transcript=transcript)
+    order = [provider] + [p for p in LLM_PROVIDERS if p != provider and p in keys]
+    errors = []
+    for prov in order:
+        base_url, defaults = LLM_PROVIDERS[prov]
+        models = (([model] if prov == provider and model else [])
+                  + [m for m in defaults if m != model])
+        for m in models:
+            for attempt in range(2):
+                try:
+                    text = _llm_once(base_url, keys[prov], prov, m, prompt)
+                    return text, f"{prov}/{m}"
+                except RuntimeError as ex:
+                    if str(ex).startswith("429") and attempt == 0:
+                        time.sleep(8)
+                        continue
+                    errors.append(f"{prov}/{m} -> {str(ex)[:60]}")
+                    break
+                except Exception as ex:
+                    errors.append(f"{prov}/{m} -> {type(ex).__name__}")
+                    break
+    raise RuntimeError("AI model တွေ အကုန် မရပါ: " + " | ".join(errors))
