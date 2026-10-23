@@ -86,6 +86,18 @@ ai_custom = st.sidebar.text_input(
 if ai_custom.strip():
     ai_model = ai_custom.strip()
 
+# ---------- Sidebar: Transcript engine ----------
+st.sidebar.header("📝 Transcript engine")
+stt_engine = st.sidebar.selectbox(
+    "Transcript ထုတ်နည်း",
+    ["groq", "local"],
+    format_func=lambda e: {
+        "groq": "Groq Whisper large-v3 (ပိုမှန်၊ မြန်၊ key လို)",
+        "local": "Local Whisper base (key မလို၊ နှေးနိုင်)",
+    }[e],
+    help="Groq မရရင် Local ကို အလိုအလျောက် ပြန်ပြောင်းစမ်းပေးမယ်",
+)
+
 # ---------- အဆင့် ၁: ဗီဒီယို upload ----------
 uploaded = st.file_uploader("ဗီဒီယို ဖိုင် တင်ပါ (mp4)", type=["mp4", "mov", "mkv"])
 video_path = None
@@ -98,10 +110,22 @@ if uploaded:
 
 # ---------- အဆင့် ၂: Transcript ----------
 if video_path and st.button("📝 Transcript ထုတ်မယ် (Whisper)"):
-    with st.spinner("အသံထုတ် + စာသားပြောင်းနေတယ်..."):
-        audio = pipeline.extract_audio(video_path, os.path.join(WORKDIR, "audio.wav"))
-        segs, lang = pipeline.transcribe(audio)
-        st.session_state["transcript"] = segs
+    audio = pipeline.extract_audio(video_path, os.path.join(WORKDIR, "audio.wav"))
+    segs, lang = None, None
+    if stt_engine == "groq":
+        gkey = ai_keys["groq"].strip()
+        if not gkey:
+            st.error("Groq Whisper သုံးမယ်ဆို sidebar မှာ Groq API key အရင် ထည့်ပါ (ဒါမှမဟုတ် Local ကို ရွေးပါ)")
+            st.stop()
+        try:
+            with st.spinner("Groq Whisper နဲ့ စာသားပြောင်းနေတယ်..."):
+                segs, lang = pipeline.transcribe_groq(audio, gkey)
+        except Exception as ex:
+            st.warning(f"Groq Whisper မရ ({str(ex)[:100]}) — Local Whisper နဲ့ ပြန်စမ်းနေတယ်")
+    if segs is None:
+        with st.spinner("Local Whisper နဲ့ စာသားပြောင်းနေတယ်... (base model, ခဏကြာနိုင်)"):
+            segs, lang = pipeline.transcribe(audio)
+    st.session_state["transcript"] = segs
     st.success(f"ပြီးပြီ — ဘာသာစကား: {lang}, {len(segs)} ပိုဒ်")
 
 if "transcript" in st.session_state:

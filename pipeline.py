@@ -35,11 +35,36 @@ def _load_audio_array(audio_path):
     return np.frombuffer(raw, dtype=np.float32)
 
 
-def transcribe(audio_path, model_size="tiny"):
+def transcribe(audio_path, model_size="base"):
+    # base က tiny ထက် စာသား အများကြီး ပိုမှန်တယ် (script အရည်အသွေးက transcript ပေါ် မူတည်လို့)။
+    # Streamlit free RAM ~1GB မှာ base (int8) က အေးဆေး ဝင်တယ်။
     from faster_whisper import WhisperModel
     model = WhisperModel(model_size, device="cpu", compute_type="int8")
     segments, info = model.transcribe(_load_audio_array(audio_path))
     return [(s.start, s.end, s.text.strip()) for s in segments], info.language
+
+
+def transcribe_groq(audio_path, api_key, model="whisper-large-v3"):
+    """Groq cloud ပေါ်က Whisper large-v3 — local ထက် အများကြီး ပိုမှန်, မြန်, RAM မစား။
+    Groq key ရှိရင်ရ (Script AI အတွက် ထည့်ထားတဲ့ key အတူတူပဲ)။
+    verbose_json က အပိုဒ်လိုက် timestamp ပြန်ပေးတယ်။
+    မှတ်ချက်: Groq ရဲ့ file limit 25MB — 16kHz mono WAV က ၁ မိနစ်ကို ~2MB ပဲ ရှိလို့
+    clip အတိုတွေမှာ ပြဿနာ မရှိဘူး။"""
+    import requests, os
+    with open(audio_path, "rb") as f:
+        r = requests.post(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            files={"file": (os.path.basename(audio_path), f, "audio/wav")},
+            data={"model": model, "response_format": "verbose_json"},
+            timeout=300,
+        )
+    if r.status_code != 200:
+        raise RuntimeError(f"Groq Whisper error {r.status_code}: {r.text[:200]}")
+    data = r.json()
+    segs = [(s["start"], s["end"], s["text"].strip())
+            for s in data.get("segments", [])]
+    return segs, data.get("language", "?")
 
 
 # ---------------- TTS engines ----------------
@@ -215,7 +240,7 @@ def _llm_once(base_url, api_key, provider, model, prompt):
     r = requests.post(
         f"{base_url}/chat/completions",
         headers=headers,
-        json={"model": model,
+        json={"model": model, "temperature": 0.7,
               "messages": [{"role": "user", "content": prompt}]},
         timeout=90,
     )
