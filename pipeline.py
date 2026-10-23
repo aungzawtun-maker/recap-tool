@@ -144,6 +144,8 @@ SCRIPT_PROMPT = """သင်က မြန်မာဟာသ movie recap စာ�
 စည်းကမ်းတွေ:
 - စာကြောင်းတစ်ကြောင်းချင်းကို ဒီပုံစံနဲ့ပဲ ထုတ်ပါ: စစက္ကန့် | စာသား
   ဥပမာ: 0 | ကြိုးဖြေနေတယ်။ ဘာလုပ်မလို့လဲ?
+- Transcript ထဲက [0s] လို ကွင်းခတ်ပုံစံကို လုံး၀ မသုံးပါနဲ့ — ဂဏန်း နဲ့ | ပဲ သုံးပါ
+- ဇာတ်ကောင် ကိုယ်တိုင် ပြောသလို (ကျွန်တော်/ကျွန်မ) မရေးပါနဲ့ — ပြင်ပက ကြည့်ပြီး ပြန်ပြောပြတဲ့ narrator အဖြစ် ရေးပါ (ဥပမာ: "ဒီကောင်လေး ကူညီဖို့ ငြင်းဆန်နေတယ်")
 - စစက္ကန့်တွေကို transcript ရဲ့ အချိန်တွေနဲ့ ကိုက်ညီအောင် ထားပါ
 - တစ်ကြောင်းကို မြန်မာစကားလုံး ၈-၁၂ လုံးခန့်ပဲ ထားပါ (TTS က တစ်စက္ကန့် ၂ လုံးနှုန်းပဲ ပြောနိုင်တယ်)
 - ဟာသဖြစ်အောင် ရေးပါ၊ ဒါပေမဲ့ ဇာတ်လမ်းအစစ်ကို မပျက်စီးစေပါနဲ့
@@ -176,6 +178,32 @@ LLM_PROVIDERS = {
          "meta/llama-3.3-70b-instruct"],
     ),
 }
+
+
+def _normalize_script(text):
+    """Model တွေ format လွဲထုတ်တတ်တယ် ([0s] ..., 0:05 ... စသည်) — အားလုံးကို
+    'စက္ကန့် | စာသား' ပုံစံတူ ပြောင်းပေး။ မကိုက်တဲ့ စာကြောင်းကို ဒီအတိုင်း ထား
+    (app ရဲ့ parse_script က | မပါရင် ကျော်သွားမယ်)။"""
+    import re
+    out = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        m = (re.match(r"^\[?(\d+(?:\.\d+)?)\s*s\]?\s*\|\s*(.+)$", line)
+             or re.match(r"^\[(\d+(?:\.\d+)?)\s*s?\]\s*(.+)$", line)
+             or re.match(r"^(\d+(?:\.\d+)?)s\s*[:\-]\s*(.+)$", line))
+        if m:
+            sec = float(m.group(1))
+            sec = int(sec) if sec == int(sec) else sec
+            out.append(f"{sec} | {m.group(2).strip()}")
+            continue
+        mm = re.match(r"^(\d+):(\d{2})\s*\|?\s*(.+)$", line)
+        if mm:
+            out.append(f"{int(mm.group(1)) * 60 + int(mm.group(2))} | {mm.group(3).strip()}")
+            continue
+        out.append(line)
+    return "\n".join(out)
 
 
 def _llm_once(base_url, api_key, provider, model, prompt):
@@ -222,7 +250,7 @@ def write_script(segments, provider="openrouter", keys=None, model=""):
             for attempt in range(2):
                 try:
                     text = _llm_once(base_url, keys[prov], prov, m, prompt)
-                    return text, f"{prov}/{m}"
+                    return _normalize_script(text), f"{prov}/{m}"
                 except RuntimeError as ex:
                     if str(ex).startswith("429") and attempt == 0:
                         time.sleep(8)
