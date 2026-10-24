@@ -8,8 +8,15 @@ Streamlit app (app.py) က ဒီ module ကို import လုပ်ပြီ�
   transcribe()     -> Whisper နဲ့ transcript
   tts_all()        -> script စာကြောင်းတွေ အသံပြောင်း (gTTS / ElevenLabs)
   build_video()    -> narration စီ + ဗီဒီယိုနဲ့ ပြန်ဆက်
+  write_srt()      -> script ကို .srt စာတန်းဖိုင် ထုတ်
+  burn_subtitles() -> SRT စာတန်းကို ဗီဒီယိုထဲ အပြီးထည့် (မြန်မာဖောင့်ပါ)
 """
 import subprocess, os, json
+
+# မြန်မာစာတန်းအတွက် ဖောင့် — Google Fonts (OFL license), ပထမအကြိမ်မှာ auto-download
+MYANMAR_FONT_URL = ("https://raw.githubusercontent.com/google/fonts/main/"
+                    "ofl/notosansmyanmar/NotoSansMyanmar%5Bwdth%2Cwght%5D.ttf")
+MYANMAR_FONT_NAME = "Noto Sans Myanmar"
 
 
 def probe_duration(path):
@@ -121,19 +128,25 @@ def tts_all(script, engine, workdir, api_key="", voice_id="", log=print):
 
 # ---------------- Assembly ----------------
 
-def build_video(video_path, files, workdir, log=print):
-    video_dur = probe_duration(video_path)
-    # စာကြောင်းတွေ ထပ်မနေအောင် timestamp အလိုက် စီ
+def place_timings(files):
+    """[(path, target_sec, dur_sec)] -> [(path, start_sec, dur_sec)]
+    စာကြောင်းတွေ ထပ်မနေအောင် timestamp အလိုက် စီ (build_video နဲ့ SRT အတူတူ သုံးတယ်)"""
     placed, prev_end = [], 0.0
     for path, target, dur in files:
-        start = max(target, prev_end + 0.25)
-        placed.append((path, start))
-        prev_end = start + dur
-    total = prev_end
+        start = max(float(target), prev_end + 0.25)
+        placed.append((path, start, float(dur)))
+        prev_end = start + float(dur)
+    return placed
+
+
+def build_video(video_path, files, workdir, log=print):
+    video_dur = probe_duration(video_path)
+    placed = place_timings(files)
+    total = placed[-1][1] + placed[-1][2] if placed else 0.0
     log(f"Narration {total:.1f}s / Video {video_dur:.1f}s")
 
     inputs, filters = [], []
-    for i, (path, start) in enumerate(placed):
+    for i, (path, start, dur) in enumerate(placed):
         inputs += ["-i", path]
         ms = int(start * 1000)
         filters.append(f"[{i}:a]adelay={ms}|{ms}[a{i}]")
@@ -159,6 +172,84 @@ def build_video(video_path, files, workdir, log=print):
                     "-c:v", "copy", "-c:a", "aac", "-shortest", final],
                    check=True, capture_output=True)
     return final
+
+
+# ---------------- Subtitles (SRT + burn-in) ----------------
+
+def _srt_time(sec):
+    sec = max(0.0, float(sec))
+    h, rem = divmod(sec, 3600)
+    m, rem = divmod(rem, 60)
+    s = int(rem)
+    ms = int(round((rem - s) * 1000))
+    return f"{int(h):02d}:{int(m):02d}:{s:02d},{ms:03d}"
+
+
+def write_srt(timed, out_path):
+    """timed = [(start_sec, dur_sec, text), ...] -> .srt စာတန်းဖိုင် ထုတ်။
+    အချိန်တွေက TTS အသံအစစ်ရဲ့ နေရာချထားမှုနဲ့ ကိုက်တယ်။"""
+    blocks = []
+    for i, (start, dur, text) in enumerate(timed):
+        end = start + max(0.5, float(dur))
+        if i + 1 < len(timed):
+            end = min(end, timed[i + 1][0] - 0.05)
+        end = max(end, start + 0.5)
+        blocks.append(f"{i + 1}\n{_srt_time(start)} --> {_srt_time(end)}\n{text.strip()}\n")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(blocks))
+    return out_path
+
+
+def ensure_myanmar_font(workdir, log=print):
+    """မြန်မာဖောင့် (Noto Sans Myanmar) ကို workdir/fonts/ မှာ ရှိမရှိ စစ် —
+    မရှိရင် Google Fonts ကနေ ဒေါင်းလုဒ်လုပ်။ ရရင် path ပြန်, မရရင် None။"""
+    import requests
+    d = os.path.join(workdir, "fonts")
+    os.makedirs(d, exist_ok=True)
+    p = os.path.join(d, "NotoSansMyanmar.ttf")
+    if os.path.exists(p) and os.path.getsize(p) > 100000:
+        return p
+    try:
+        log("မြန်မာဖောင့် ဒေါင်းလုဒ်နေတယ်... (ပထမတစ်ခါတည်း)")
+        r = requests.get(MYANMAR_FONT_URL, timeout=120)
+        r.raise_for_status()
+        if r.content[:4] not in (b"\x00\x01\x00\x00", b"OTTO", b"true"):
+            raise RuntimeError("ဖောင့်ဖိုင် မဟုတ်ပါ")
+        with open(p, "wb") as f:
+            f.write(r.content)
+        return p
+    except Exception as ex:
+        log(f"ဖောင့် ဒေါင်းလုဒ် မရ: {ex}")
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+        return None
+
+
+def _vf_escape(path):
+    p = os.path.abspath(path)
+    for ch in ("\\", "'", ":", ",", "[", "]", ";"):
+        p = p.replace(ch, "\\" + ch)
+    return p
+
+
+def burn_subtitles(video_path, srt_path, font_path, out_path, log=print):
+    """SRT စာတန်းကို ဗီဒီယိုထဲ အပြီးထည့်။
+    libass သုံးလို့ မြန်မာအက္ခရာ shaping မှန်တယ် (drawtext နဲ့ မရဘူး)။
+    ပုံစံ: အဝါရောင် bold + အနက်ကွက် outline — recap caption စတိုင်။"""
+    fontsdir = os.path.dirname(os.path.abspath(font_path))
+    vf = (f"subtitles='{_vf_escape(srt_path)}'"
+          f":fontsdir='{_vf_escape(fontsdir)}'"
+          f":force_style='FontName={MYANMAR_FONT_NAME},FontSize=44,"
+          "PrimaryColour=&H0000FFFF,OutlineColour=&H80000000,"
+          "BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=120,Bold=1'")
+    subprocess.run(["ffmpeg", "-y", "-i", video_path, "-vf", vf,
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                    "-c:a", "copy", out_path],
+                   check=True, capture_output=True)
+    log("စာတန်းထိုး ထည့်ပြီးပြီ")
+    return out_path
 
 
 # ---------------- Auto script (LLM, multi-provider + auto-fallback) ----------------

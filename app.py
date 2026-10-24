@@ -15,6 +15,15 @@ st.caption("ဗီဒီယိုတင် → transcript → script ပြင�
 WORKDIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web_output")
 os.makedirs(WORKDIR, exist_ok=True)
 
+
+def _secret(name):
+    """Streamlit Secrets (Cloud -> Settings -> Secrets) ထဲက key ကို ယူ။
+    Secrets မရှိရင် / local မှာ run ရင် အလွတ် ပြန်ပေးတယ် — app ပျက်မသွားဘူး။"""
+    try:
+        return str(st.secrets[name])
+    except Exception:
+        return ""
+
 # ---------- Sidebar: TTS ရွေးချယ်မှု ----------
 st.sidebar.header("🔊 အသံ (TTS) ရွေးမယ်")
 engine = st.sidebar.selectbox(
@@ -35,6 +44,7 @@ if engine == "edgetts":
     )
 if engine == "elevenlabs":
     api_key = st.sidebar.text_input("ElevenLabs API key", type="password",
+                                    value=_secret("elevenlabs_api_key"),
                                     help="elevenlabs.io → Profile → API Keys")
     voice_id = st.sidebar.text_input(
         "Voice ID", value="21m00Tcm4TlvDq8ikWAM",
@@ -55,15 +65,18 @@ ai_provider = st.sidebar.selectbox(
 )
 ai_keys = {
     "openrouter": st.sidebar.text_input(
-        "OpenRouter API key", type="password",
+        "OpenRouter API key", type="password", value=_secret("openrouter_api_key"),
         help="openrouter.ai → Keys → Create Key"),
     "groq": st.sidebar.text_input(
-        "Groq API key", type="password",
+        "Groq API key", type="password", value=_secret("groq_api_key"),
         help="groq.com → Sign in → API Keys → Create API Key"),
     "nvidia": st.sidebar.text_input(
-        "NVIDIA API key", type="password",
+        "NVIDIA API key", type="password", value=_secret("nvidia_api_key"),
         help="build.nvidia.com → model တစ်ခုခု → Get API Key"),
 }
+if any(_secret(k) for k in ("openrouter_api_key", "groq_api_key",
+                            "nvidia_api_key", "elevenlabs_api_key")):
+    st.sidebar.caption("🔑 Secrets ထဲက key တွေ့ပြီ — reboot/sleep ဖြစ်လည်း ပြန်ထည့်စရာ မလိုတော့ဘူး")
 MODEL_LABELS = {
     "google/gemma-4-31b-it:free": "Gemma 4 31B (အခမဲ့)",
     "google/gemma-4-26b-a4b-it:free": "Gemma 4 26B (အခမဲ့)",
@@ -166,6 +179,10 @@ def parse_script(text):
 
 
 # ---------- အဆင့် ၄: ဗီဒီယို ထုတ် ----------
+add_subs = st.checkbox(
+    "🔤 စာတန်းထိုး (subtitles) ဗီဒီယိုထဲ ထည့်မယ်",
+    value=True,
+    help="TikTok/Reels အတွက် အဝါရောင် စာတန်းထိုး — SRT ဖိုင်ကိုတော့ အမြဲ ထုတ်ပေးမယ်")
 if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", type="primary"):
     if engine == "elevenlabs" and not api_key:
         st.error("ElevenLabs သုံးမယ်ဆို sidebar မှာ API key အရင် ထည့်ပါ")
@@ -186,3 +203,31 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
     with open(final, "rb") as f:
         st.download_button("⬇️ Final video ဒေါင်းလုပ်", f,
                            file_name="final_recap.mp4", mime="video/mp4")
+
+    # ---------- စာတန်းထိုး: SRT ထုတ် + ဗီဒီယိုထဲ ထည့် ----------
+    placed = pipeline.place_timings(files)  # [(path, start, dur)]
+    timed = [(start, dur, text)
+             for (path, start, dur), (target, text) in zip(placed, script)]
+    srt_path = os.path.join(WORKDIR, "recap.srt")
+    with st.spinner("SRT စာတန်းဖိုင် ထုတ်နေတယ်..."):
+        pipeline.write_srt(timed, srt_path)
+    with open(srt_path, "rb") as f:
+        st.download_button("⬇️ SRT စာတန်းဖိုင် ဒေါင်းလုပ်", f,
+                           file_name="recap.srt", mime="text/plain")
+    if add_subs:
+        with st.spinner("စာတန်းထိုး ဗီဒီယိုထဲ ထည့်နေတယ်... (ပထမတစ်ခါ ဖောင့် ဒေါင်းလုဒ်မယ်)"):
+            font = pipeline.ensure_myanmar_font(
+                WORKDIR, log=lambda m: status.write(m))
+            if font:
+                subbed = os.path.join(WORKDIR, "final_recap_subs.mp4")
+                pipeline.burn_subtitles(final, srt_path, font, subbed,
+                                        log=lambda m: status.write(m))
+                st.success("စာတန်းထိုး ထည့်ပြီးပြီ! 🎉")
+                st.video(subbed)
+                with open(subbed, "rb") as f:
+                    st.download_button("⬇️ စာတန်းထိုးဗီဒီယို ဒေါင်းလုပ်", f,
+                                       file_name="final_recap_subs.mp4",
+                                       mime="video/mp4")
+            else:
+                st.warning("မြန်မာဖောင့် ဒေါင်းလုဒ် မရလို့ စာတန်းထိုး မထည့်နိုင်ပါ — "
+                           "SRT ဖိုင်ကိုတော့ အပေါ်က ဒေါင်းလုဒ်ထားနိုင်ပါတယ်")
