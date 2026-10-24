@@ -27,6 +27,16 @@ def probe_duration(path):
     return float(json.loads(out)["format"]["duration"])
 
 
+def probe_dimensions(path):
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height",
+         "-of", "json", path],
+        capture_output=True, text=True, check=True).stdout
+    s = json.loads(out)["streams"][0]
+    return int(s["width"]), int(s["height"])
+
+
 def extract_audio(video_path, out_path):
     cmd = ["ffmpeg", "-y", "-i", video_path,
            "-vn", "-ac", "1", "-ar", "16000", out_path]
@@ -139,7 +149,7 @@ def place_timings(files):
     return placed
 
 
-def build_video(video_path, files, workdir, log=print):
+def build_video(video_path, files, workdir, log=print, keep_orig=False):
     video_dur = probe_duration(video_path)
     placed = place_timings(files)
     total = placed[-1][1] + placed[-1][2] if placed else 0.0
@@ -166,7 +176,13 @@ def build_video(video_path, files, workdir, log=print):
         log(f"atempo x{rate:.2f}")
 
     final = os.path.join(workdir, "final_recap.mp4")
-    fc = "[0:a]volume=0.12[orig];[orig][1:a]amix=inputs=2:normalize=0[aout]"
+    if keep_orig:
+        # မူရင်းအသံ 12% နဲ့ ရော (အရင်အတိုင်း)
+        fc = "[0:a]volume=0.12[orig];[orig][1:a]amix=inputs=2:normalize=0[aout]"
+    else:
+        # narration သီးသန့် — မူရင်းဗီဒီယိုထဲက လူပြောသံ/အသံတွေ လုံးဝ မပါ
+        # (apad က narration တိုနေရင် တိတ်ဆိတ်နဲ့ ဖြည့်ပေးလို့ ဗီဒီယို အပြည့်ထွက်တယ်)
+        fc = "[1:a]apad[aout]"
     subprocess.run(["ffmpeg", "-y", "-i", video_path, "-i", narr,
                     "-filter_complex", fc, "-map", "0:v", "-map", "[aout]",
                     "-c:v", "copy", "-c:a", "aac", "-shortest", final],
@@ -234,16 +250,59 @@ def _vf_escape(path):
     return p
 
 
-def burn_subtitles(video_path, srt_path, font_path, out_path, log=print):
-    """SRT စာတန်းကို ဗီဒီယိုထဲ အပြီးထည့်။
-    libass သုံးလို့ မြန်မာအက္ခရာ shaping မှန်တယ် (drawtext နဲ့ မရဘူး)။
-    ပုံစံ: အဝါရောင် bold + အနက်ကွက် outline — recap caption စတိုင်။"""
+def _ass_time(sec):
+    sec = max(0.0, float(sec))
+    h = int(sec // 3600); m = int((sec % 3600) // 60); s = sec % 60
+    return f"{h}:{m:02d}:{s:05.2f}"
+
+
+def _ass_escape(text):
+    t = text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+    return t.replace("\n", "\\N")
+
+
+def burn_subtitles(video_path, timed, font_path, out_path, log=print):
+    """Timed subtitle တွေကို ဗီဒီယိုထဲ အပြီးထည့်။
+    သတိ: SRT ကို ffmpeg ရဲ့ subtitles filter နဲ့ တိုက်ရိုက်ထည့်ရင်
+    ffmpeg က ASS ကို 384x288 PlayRes နဲ့ ထုတ်ပြီး ဗီဒီယို size ကို
+    အချိုးမညီဘဲ ဆန့်ထုတ်လို့ — စာလုံး ကြီးလွန်း၊ အပေါ်ရောက်၊
+    မြန်မာအက္ခရာ shaping (သရသင်္ကေတ/ရရစ် နေရာလွဲ) ပျက်တယ်။
+    ဒါကြောင့် ASS ကို ကိုယ်တိုင် ဗီဒီယိုအရွယ် အတိအကျ
+    (PlayRes = video size) နဲ့ ရေးပြီး ass filter နဲ့ ထည့်တယ်။
+    timed = [(start_sec, dur_sec, text), ...]
+    ပုံစံ: အဝါရောင် bold + အနက်ကွက် outline, အောက်ခြေ, MarginV 120။"""
+    w, h = probe_dimensions(video_path)
+    events = []
+    for start, dur, text in timed:
+        end = start + max(0.5, float(dur))
+        events.append((start, end, text))
+    fixed = []
+    for i, (start, end, text) in enumerate(events):
+        if i + 1 < len(events):
+            end = min(end, events[i + 1][0] - 0.05)
+        end = max(end, start + 0.5)
+        fixed.append((start, end, text))
+    lines = [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        f"PlayResX: {w}",
+        f"PlayResY: {h}",
+        "ScaledBorderAndShadow: yes",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Default,{MYANMAR_FONT_NAME},44,&H0000FFFF,&H000000FF,&H80000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,120,120,120,1",
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ]
+    for start, end, text in fixed:
+        lines.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{_ass_escape(text.strip())}")
+    ass_path = os.path.join(os.path.dirname(out_path), "recap.ass")
+    with open(ass_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
     fontsdir = os.path.dirname(os.path.abspath(font_path))
-    vf = (f"subtitles='{_vf_escape(srt_path)}'"
-          f":fontsdir='{_vf_escape(fontsdir)}'"
-          f":force_style='FontName={MYANMAR_FONT_NAME},FontSize=44,"
-          "PrimaryColour=&H0000FFFF,OutlineColour=&H80000000,"
-          "BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=120,Bold=1'")
+    vf = f"ass='{_vf_escape(ass_path)}':fontsdir='{_vf_escape(fontsdir)}'"
     subprocess.run(["ffmpeg", "-y", "-i", video_path, "-vf", vf,
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                     "-c:a", "copy", out_path],
@@ -296,6 +355,14 @@ LLM_PROVIDERS = {
 }
 
 
+def _clean_script_text(t):
+    """Script စာသားထဲက ကွင်းခတ် အချိန်အမှတ်တွေ ([6s] [8s] ...) ကို
+    နေရာမရွေး ဖျက် — TTS ဖတ်တာ/စာတန်းထိုးမှာ ပေါ်မလာအောင်။"""
+    import re
+    t = re.sub(r"\[\d+(?:\.\d+)?s?\]", "", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def _normalize_script(text):
     """Model တွေ format လွဲထုတ်တတ်တယ် ([0s] ..., 0:05 ... စသည်) — အားလုံးကို
     'စက္ကန့် | စာသား' ပုံစံတူ ပြောင်းပေး။ မကိုက်တဲ့ စာကြောင်းကို ဒီအတိုင်း ထား
@@ -312,11 +379,15 @@ def _normalize_script(text):
         if m:
             sec = float(m.group(1))
             sec = int(sec) if sec == int(sec) else sec
-            out.append(f"{sec} | {m.group(2).strip()}")
+            body = _clean_script_text(m.group(2))
+            if body:
+                out.append(f"{sec} | {body}")
             continue
         mm = re.match(r"^(\d+):(\d{2})\s*\|?\s*(.+)$", line)
         if mm:
-            out.append(f"{int(mm.group(1)) * 60 + int(mm.group(2))} | {mm.group(3).strip()}")
+            body = _clean_script_text(mm.group(3))
+            if body:
+                out.append(f"{int(mm.group(1)) * 60 + int(mm.group(2))} | {body}")
             continue
         out.append(line)
     return "\n".join(out)

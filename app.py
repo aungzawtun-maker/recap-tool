@@ -29,6 +29,7 @@ st.sidebar.header("🔊 အသံ (TTS) ရွေးမယ်")
 engine = st.sidebar.selectbox(
     "TTS engine",
     ["gtts", "edgetts", "elevenlabs"],
+    index=1,
     format_func=lambda e: {
         "gtts": "gTTS (အခမဲ့၊ အသံစက်ဆန်)",
         "edgetts": "Edge TTS (မြန်မာ Thiha/Nilar၊ အခမဲ့)",
@@ -168,13 +169,44 @@ script_text = st.text_area(
     placeholder="🤖 AI ခလုတ် နှိပ်ရင် ဒီမှာ script ပေါ်လာမယ် — ဒါမှမဟုတ် ကိုယ်တိုင် `0 | စာသား` ပုံစံနဲ့ ရေးထည့်လို့လည်း ရတယ်")
 
 
+def _clean_script_text(t):
+    """Script စာသားထဲက ကွင်းခတ် အချိန်အမှတ်တွေ ([6s] [8s] ...) ကို
+    နေရာမရွေး ဖျက် — TTS ဖတ်တာ/စာတန်းထိုးမှာ ပေါ်မလာအောင်။"""
+    import re
+    t = re.sub(r"\[\d+(?:\.\d+)?s?\]", "", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def parse_script(text):
     lines = []
     for row in text.strip().splitlines():
-        if "|" not in row:
+        row = row.strip()
+        if not row:
             continue
-        start, body = row.split("|", 1)
-        lines.append((float(start.strip()), body.strip()))
+        if "|" in row:
+            start, body = row.split("|", 1)
+            try:
+                start = float(start.strip())
+            except ValueError:
+                continue
+            body = _clean_script_text(body)
+            if body:
+                lines.append((start, body))
+            continue
+        # | မပါတဲ့ ကွင်းခတ်/mm:ss ပုံစံတွေလည်း လက်ခံ
+        # (transcript/AI အထွက်ကို အတိုင်း ကူးထည့်ထားတဲ့ script တွေ အတွက်)
+        import re
+        m = (re.match(r"^\[(\d+(?:\.\d+)?)\s*s?\]\s*(.+)$", row)
+             or re.match(r"^(\d+):(\d{2})\s+(.+)$", row))
+        if m:
+            if len(m.groups()) == 2:
+                body = _clean_script_text(m.group(2))
+                if body:
+                    lines.append((float(m.group(1)), body))
+            else:
+                body = _clean_script_text(m.group(3))
+                if body:
+                    lines.append((int(m.group(1)) * 60 + int(m.group(2)), body))
     return lines
 
 
@@ -183,6 +215,10 @@ add_subs = st.checkbox(
     "🔤 စာတန်းထိုး (subtitles) ဗီဒီယိုထဲ ထည့်မယ်",
     value=True,
     help="TikTok/Reels အတွက် အဝါရောင် စာတန်းထိုး — SRT ဖိုင်ကိုတော့ အမြဲ ထုတ်ပေးမယ်")
+keep_orig = st.checkbox(
+    "🎧 မူရင်းအသံ နည်းနည်းထားမယ် (12%)",
+    value=False,
+    help="မနှိပ်ရင် narration သီးသန့်ပဲ ထွက်မယ် — မူရင်းဗီဒီယိုထဲက လူပြောသံတွေ မပါတော့ဘူး")
 if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", type="primary"):
     if engine == "elevenlabs" and not api_key:
         st.error("ElevenLabs သုံးမယ်ဆို sidebar မှာ API key အရင် ထည့်ပါ")
@@ -197,7 +233,8 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
                                  api_key=api_key, voice_id=voice_id,
                                  log=lambda m: status.write(m))
         final = pipeline.build_video(video_path, files, WORKDIR,
-                                      log=lambda m: status.write(m))
+                                      log=lambda m: status.write(m),
+                                      keep_orig=keep_orig)
     st.success("ပြီးပါပြီ! 🎉")
     st.video(final)
     with open(final, "rb") as f:
@@ -220,7 +257,7 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
                 WORKDIR, log=lambda m: status.write(m))
             if font:
                 subbed = os.path.join(WORKDIR, "final_recap_subs.mp4")
-                pipeline.burn_subtitles(final, srt_path, font, subbed,
+                pipeline.burn_subtitles(final, timed, font, subbed,
                                         log=lambda m: status.write(m))
                 st.success("စာတန်းထိုး ထည့်ပြီးပြီ! 🎉")
                 st.video(subbed)
