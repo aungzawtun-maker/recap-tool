@@ -148,14 +148,11 @@ if "transcript" in st.session_state:
 st.subheader("✍️ Recap Script")
 st.caption("တစ်ကြောင်းကို `စမယ့်စက္ကန့် | စာသား` ပုံစံနဲ့ ရေးပါ။ "
            "စာတိုတိုထားမှ အသံက ဗီဒီယိုနဲ့ ကိုက်မယ် (၁ စက္ကန့် ≈ မြန်မာစကားလုံး ၂ လုံးနှုန်း)")
-default_script = """0 | ကြိုးဖြေနေတယ်။ ဘာလုပ်မလို့လဲ?
-8 | ကားခေါင်းပေါ် ခုန်တက်! လျှောကျသွားပြီ!
-17 | ကားအောက်မှာ လူပိတ်မိ! ဆွဲထုတ်ကြ! ရှင်တယ်!
-34 | ကားဆီ သွားပြီ! တိုင်တွေ လဲကုန်ပြီ! ဘုန်း!
-47 | ဘမ်း! ရထားနဲ့ တွေ့ပြီ! မင်းက မုန်တိုင်းလား?"""
 if "script_box" not in st.session_state:
-    st.session_state["script_box"] = default_script
-script_text = st.text_area("Script", height=180, key="script_box")
+    st.session_state["script_box"] = ""
+script_text = st.text_area(
+    "Script", height=180, key="script_box",
+    placeholder="🤖 AI ခလုတ် နှိပ်ရင် ဒီမှာ script ပေါ်လာမယ် — ဒါမှမဟုတ် ကိုယ်တိုင် `0 | စာသား` ပုံစံနဲ့ ရေးထည့်လို့လည်း ရတယ်")
 
 
 def parse_script(text):
@@ -174,6 +171,9 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
         st.error("ElevenLabs သုံးမယ်ဆို sidebar မှာ API key အရင် ထည့်ပါ")
         st.stop()
     script = parse_script(script_text)
+    if not script:
+        st.error("Script မရှိသေးဘူး — အရင် AI နဲ့ ရေးခိုင်းပါ, ဒါမှမဟုတ် box ထဲ ကိုယ်တိုင် ရေးထည့်ပါ")
+        st.stop()
     status = st.empty()
     with st.spinner("TTS + ဗီဒီယို ဆက်နေတယ်... (မိနစ်ပိုင်း ကြာနိုင်တယ်)"):
         files = pipeline.tts_all(script, engine, WORKDIR,
