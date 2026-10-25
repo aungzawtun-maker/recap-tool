@@ -207,7 +207,16 @@ def parse_script(text):
                 body = _clean_script_text(m.group(3))
                 if body:
                     lines.append((int(m.group(1)) * 60 + int(m.group(2)), body))
-    return lines
+    # ထပ်နေတဲ့ (အချိန်, စာသား) အတွဲတွေ တစ်ကြောင်းတည်း ချန် (အစဉ်လိုက်) —
+    # AI က block လိုက် ထပ်ထုတ်ရင် narration ၂ ခါ ထပ်ပြီး ဗီဒီယိုနဲ့ မကိုက်ဘဲ
+    # အသံ အမြန်တင်ရတဲ့ ပြဿနာ မဖြစ်အောင်
+    seen = set()
+    deduped = []
+    for item in lines:
+        if item not in seen:
+            seen.add(item)
+            deduped.append(item)
+    return deduped
 
 
 # ---------- အဆင့် ၄: ဗီဒီယို ထုတ် ----------

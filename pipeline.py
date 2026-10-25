@@ -366,12 +366,20 @@ def _clean_script_text(t):
 def _normalize_script(text):
     """Model တွေ format လွဲထုတ်တတ်တယ် ([0s] ..., 0:05 ... စသည်) — အားလုံးကို
     'စက္ကန့် | စာသား' ပုံစံတူ ပြောင်းပေး။ မကိုက်တဲ့ စာကြောင်းကို ဒီအတိုင်း ထား
-    (app ရဲ့ parse_script က | မပါရင် ကျော်သွားမယ်)။"""
+    (app ရဲ့ parse_script က | မပါရင် ကျော်သွားမယ်)။
+    Reasoning model တွေ (Nemotron လို) က script block လိုက် ထပ်ထုတ်တာ +
+    "I need to stop. Final answer:" လို meta စာကြောင်းတွေ ပါတတ်လို့
+    အဲဒါတွေကို ဖျက်ပြီး ထပ်နေတဲ့ စာကြောင်းတွေလည်း တစ်ကြောင်းတည်း ချန်တယ် —
+    မဟုတ်ရင် narration ၂ ခါ ထပ်ပြီး ဗီဒီယိုနဲ့ မကိုက်ဘဲ အမြန်တင်ရတယ်။"""
     import re
+    META_PREFIXES = ("i need to stop", "final answer", "here is", "here's",
+                     "sure, here", "okay, here", "let me", "thinking:")
     out = []
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
+            continue
+        if line.lower().startswith(META_PREFIXES):
             continue
         m = (re.match(r"^\[?(\d+(?:\.\d+)?)\s*s\]?\s*\|\s*(.+)$", line)
              or re.match(r"^\[(\d+(?:\.\d+)?)\s*s?\]\s*(.+)$", line)
@@ -390,7 +398,14 @@ def _normalize_script(text):
                 out.append(f"{int(mm.group(1)) * 60 + int(mm.group(2))} | {body}")
             continue
         out.append(line)
-    return "\n".join(out)
+    # ထပ်နေတဲ့ စာကြောင်းတွေ တစ်ကြောင်းတည်း ချန် (အစဉ်လိုက်)
+    seen = set()
+    deduped = []
+    for line in out:
+        if line not in seen:
+            seen.add(line)
+            deduped.append(line)
+    return "\n".join(deduped)
 
 
 def _llm_once(base_url, api_key, provider, model, prompt):
