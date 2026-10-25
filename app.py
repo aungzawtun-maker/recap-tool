@@ -57,14 +57,18 @@ st.sidebar.caption("Transcript ကနေ ဟာသ script အလိုအလျ�
                    "provider/model တစ်ခု မရရင် နောက်တစ်ခု အလိုအလျောက် ပြောင်းစမ်းပေးမယ်")
 ai_provider = st.sidebar.selectbox(
     "AI provider",
-    ["openrouter", "groq", "nvidia"],
+    ["gemini", "openrouter", "groq", "nvidia"],
     format_func=lambda p: {
+        "gemini": "Gemini (မြန်မာအကောင်း)",
         "openrouter": "OpenRouter (အခမဲ့ model အများ)",
         "groq": "Groq (မြန်၊ အခမဲ့)",
         "nvidia": "NVIDIA (အခမဲ့)",
     }[p],
 )
 ai_keys = {
+    "gemini": st.sidebar.text_input(
+        "Gemini API key", type="password", value=_secret("gemini_api_key"),
+        help="aistudio.google.com → Get API Key"),
     "openrouter": st.sidebar.text_input(
         "OpenRouter API key", type="password", value=_secret("openrouter_api_key"),
         help="openrouter.ai → Keys → Create Key"),
@@ -75,10 +79,13 @@ ai_keys = {
         "NVIDIA API key", type="password", value=_secret("nvidia_api_key"),
         help="build.nvidia.com → model တစ်ခုခု → Get API Key"),
 }
-if any(_secret(k) for k in ("openrouter_api_key", "groq_api_key",
+if any(_secret(k) for k in ("gemini_api_key", "openrouter_api_key", "groq_api_key",
                             "nvidia_api_key", "elevenlabs_api_key")):
     st.sidebar.caption("🔑 Secrets ထဲက key တွေ့ပြီ — reboot/sleep ဖြစ်လည်း ပြန်ထည့်စရာ မလိုတော့ဘူး")
 MODEL_LABELS = {
+    "gemini-2.5-flash": "Gemini 2.5 Flash",
+    "gemini-2.0-flash": "Gemini 2.0 Flash",
+    "gemini-flash-latest": "Gemini Flash (နောက်ဆုံး)",
     "google/gemma-4-31b-it:free": "Gemma 4 31B (အခမဲ့)",
     "google/gemma-4-26b-a4b-it:free": "Gemma 4 26B (အခမဲ့)",
     "openrouter/free": "အခမဲ့ ရတဲ့ model အလိုအလျောက်",

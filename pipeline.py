@@ -352,6 +352,14 @@ LLM_PROVIDERS = {
          "google/gemma-4-31b-it",
          "meta/llama-3.3-70b-instruct"],
     ),
+    "gemini": (
+        # Google ရဲ့ OpenAI-compatible endpoint — _llm_once အတိုင်း
+        # Bearer key + chat/completions ပုံစံနဲ့ တိုက်ရိုက်ခေါ်လို့ရတယ်
+        "https://generativelanguage.googleapis.com/v1beta/openai",
+        ["gemini-2.5-flash",
+         "gemini-2.0-flash",
+         "gemini-flash-latest"],
+    ),
 }
 
 
