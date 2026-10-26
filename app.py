@@ -242,6 +242,11 @@ add_subs = st.checkbox(
     "🔤 စာတန်းထိုး (subtitles) ဗီဒီယိုထဲ ထည့်မယ်",
     value=True,
     help="TikTok/Reels အတွက် အဝါရောင် စာတန်းထိုး — SRT ဖိုင်ကိုတော့ အမြဲ ထုတ်ပေးမယ်")
+sub_size_label = st.selectbox(
+    "စာတန်းအရွယ်",
+    ["အလတ်", "သေး", "ကြီး"],
+    help="အလတ် (64) က ပုံမှန် — ဖုန်းကြည့်ရင် သေးနေရင် ကြီး (88) ရွေးပါ")
+sub_size = {"သေး": 44, "အလတ်": 64, "ကြီး": 88}[sub_size_label]
 keep_orig = st.checkbox(
     "🎧 မူရင်းအသံ နည်းနည်းထားမယ် (12%)",
     value=False,
@@ -285,7 +290,8 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
             if font:
                 subbed = os.path.join(WORKDIR, "final_recap_subs.mp4")
                 pipeline.burn_subtitles(final, timed, font, subbed,
-                                        log=lambda m: status.write(m))
+                                        log=lambda m: status.write(m),
+                                        font_size=sub_size)
                 st.success("စာတန်းထိုး ထည့်ပြီးပြီ! 🎉")
                 st.video(subbed)
                 with open(subbed, "rb") as f:

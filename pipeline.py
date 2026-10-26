@@ -261,7 +261,7 @@ def _ass_escape(text):
     return t.replace("\n", "\\N")
 
 
-def burn_subtitles(video_path, timed, font_path, out_path, log=print):
+def burn_subtitles(video_path, timed, font_path, out_path, log=print, font_size=64):
     """Timed subtitle တွေကို ဗီဒီယိုထဲ အပြီးထည့်။
     သတိ: SRT ကို ffmpeg ရဲ့ subtitles filter နဲ့ တိုက်ရိုက်ထည့်ရင်
     ffmpeg က ASS ကို 384x288 PlayRes နဲ့ ထုတ်ပြီး ဗီဒီယို size ကို
@@ -270,7 +270,8 @@ def burn_subtitles(video_path, timed, font_path, out_path, log=print):
     ဒါကြောင့် ASS ကို ကိုယ်တိုင် ဗီဒီယိုအရွယ် အတိအကျ
     (PlayRes = video size) နဲ့ ရေးပြီး ass filter နဲ့ ထည့်တယ်။
     timed = [(start_sec, dur_sec, text), ...]
-    ပုံစံ: အဝါရောင် bold + အနက်ကွက် outline, အောက်ခြေ, MarginV 120။"""
+    ပုံစံ: အဝါရောင် bold + အနက်ကွက် outline, အောက်ခြေ, MarginV 120။
+    font_size: စာလုံးအရွယ် (default 64 — 1080x1920 မှာ 44 က ဖုန်းကြည့်ရင် သေးလွန်းလို့)။"""
     w, h = probe_dimensions(video_path)
     events = []
     for start, dur, text in timed:
@@ -291,7 +292,7 @@ def burn_subtitles(video_path, timed, font_path, out_path, log=print):
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Default,{MYANMAR_FONT_NAME},44,&H0000FFFF,&H000000FF,&H80000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,120,120,120,1",
+        f"Style: Default,{MYANMAR_FONT_NAME},{font_size},&H0000FFFF,&H000000FF,&H80000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,120,120,120,1",
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
