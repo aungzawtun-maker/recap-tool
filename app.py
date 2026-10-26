@@ -83,9 +83,9 @@ if any(_secret(k) for k in ("gemini_api_key", "openrouter_api_key", "groq_api_ke
                             "nvidia_api_key", "elevenlabs_api_key")):
     st.sidebar.caption("🔑 Secrets ထဲက key တွေ့ပြီ — reboot/sleep ဖြစ်လည်း ပြန်ထည့်စရာ မလိုတော့ဘူး")
 MODEL_LABELS = {
-    "gemini-2.5-flash": "Gemini 2.5 Flash",
-    "gemini-2.0-flash": "Gemini 2.0 Flash",
+    "gemini-3.8-flash": "Gemini 3.8 Flash",
     "gemini-flash-latest": "Gemini Flash (နောက်ဆုံး)",
+    "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
     "google/gemma-4-31b-it:free": "Gemma 4 31B (အခမဲ့)",
     "google/gemma-4-26b-a4b-it:free": "Gemma 4 26B (အခမဲ့)",
     "openrouter/free": "အခမဲ့ ရတဲ့ model အလိုအလျောက်",

@@ -356,9 +356,15 @@ LLM_PROVIDERS = {
         # Google ရဲ့ OpenAI-compatible endpoint — _llm_once အတိုင်း
         # Bearer key + chat/completions ပုံစံနဲ့ တိုက်ရိုက်ခေါ်လို့ရတယ်
         "https://generativelanguage.googleapis.com/v1beta/openai",
-        ["gemini-2.5-flash",
-         "gemini-2.0-flash",
-         "gemini-flash-latest"],
+        # သတိ: 2.5-flash / 2.0-flash ကို Google က key အသစ်တွေအတွက်
+        # ပိတ်လိုက်ပြီ (404 "no longer available to new users") — 2026-10-26
+        # debug run မှာ အတည်ပြုပြီးသား။ အစားထိုးက 3.8-flash (error ကိုယ်တိုင်
+        # ညွှန်တဲ့ model, key အသစ်နဲ့ ရတယ်လို့ စမ်းပြီးသား)၊ ပြီးရင်
+        # flash-latest (alias, တစ်ခါတစ်ရံ 503 overload ဖြစ်)၊
+        # 3.5-flash-lite (ပေါ့ပါးတဲ့ အစားထိုး)။
+        ["gemini-3.8-flash",
+         "gemini-flash-latest",
+         "gemini-3.5-flash-lite"],
     ),
 }
 
@@ -428,12 +434,16 @@ def _llm_once(base_url, api_key, provider, model, prompt):
                "Content-Type": "application/json"}
     if provider == "openrouter":
         headers["X-Title"] = "Movie Recap Tool"
+    # Gemini 3.x flash တွေ free tier မှာ တန်းစီတတ်တယ် (တိုင်းတာချက်အရ
+    # 27-148 စက္ကန့်အထိ ကြာတတ်လို့) — 90s timeout နဲ့ အမှားထင်ပြီး
+    # ဖြတ်မချမိအောင် Gemini အတွက် 180s ပေး
+    timeout = 180 if provider == "gemini" else 90
     r = requests.post(
         f"{base_url}/chat/completions",
         headers=headers,
         json={"model": model, "temperature": 0.7,
               "messages": [{"role": "user", "content": prompt}]},
-        timeout=90,
+        timeout=timeout,
     )
     if r.status_code != 200:
         raise RuntimeError(f"{r.status_code}: {r.text[:120]}")
@@ -447,7 +457,8 @@ def write_script(segments, provider="openrouter", keys=None, model=""):
     ရွေးထားတဲ့ provider/model ကနေ စ; မရရင် (404/5xx) နောက် model၊
     429 ဆို ၈ စက္ကန့် စောင့် တစ်ခါ ပြန်စမ်း၊ provider ကုန်ရင် key ရှိတဲ့
     နောက် provider ကို ဆက်စမ်း။ အောင်ရင် (script, "provider/model") ပြန်ပေး။
-    (Google AI Studio က မြန်မာ region ပိတ်ထားလို့ တိုက်ရိုက် မသုံးပါ)"""
+    စမ်းခဲ့တဲ့ model တိုင်းရဲ့ ရလဒ်ကို LAST_LLM_ATTEMPTS မှာ မှတ်ထားတယ်
+    (app.py က 🔍 section မှာ ပြဖို့)။"""
     import time
     keys = {p: k for p, k in (keys or {}).items() if k}
     if not keys:
