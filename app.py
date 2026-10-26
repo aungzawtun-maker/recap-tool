@@ -158,12 +158,23 @@ if "transcript" in st.session_state:
         if not keys:
             st.error("Sidebar မှာ AI key တစ်ခု ထည့်ပါ (OpenRouter / Groq / NVIDIA တစ်ခုခု)")
         else:
-            with st.spinner("AI က script ရေးနေတယ်... (model တစ်ခု မရရင် နောက်တစ်ခု စမ်းနေမယ်)"):
-                script_out, used_model = pipeline.write_script(
-                    st.session_state["transcript"],
-                    provider=ai_provider, keys=keys, model=ai_model)
-                st.session_state["script_box"] = script_out
-            st.success(f"Script ရပြီ — သုံးတဲ့ model: {used_model} (အောက်မှာ ပြင်လို့ရတယ်)")
+            try:
+                with st.spinner("AI က script ရေးနေတယ်... (model တစ်ခု မရရင် နောက်တစ်ခု စမ်းနေမယ်)"):
+                    script_out, used_model = pipeline.write_script(
+                        st.session_state["transcript"],
+                        provider=ai_provider, keys=keys, model=ai_model)
+                    st.session_state["script_box"] = script_out
+                st.success(f"Script ရပြီ — သုံးတဲ့ model: {used_model} (အောက်မှာ ပြင်လို့ရတယ်)")
+            except Exception as ex:
+                st.error(f"Script မရပါ: {ex}")
+            attempts = getattr(pipeline, "LAST_LLM_ATTEMPTS", [])
+            if attempts:
+                with st.expander("🔍 Model စမ်းသပ်ချက် (ဘယ် model ဘာဖြစ်လဲ)", expanded=True):
+                    for a in attempts:
+                        if a["ok"]:
+                            st.write(f"✅ {a['model']}")
+                        else:
+                            st.write(f"❌ {a['model']} — {a['error']}")
 
 # ---------- အဆင့် ၃: Script ပြင်ရေး ----------
 st.subheader("✍️ Recap Script")

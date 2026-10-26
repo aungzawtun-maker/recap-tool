@@ -363,6 +363,12 @@ LLM_PROVIDERS = {
 }
 
 
+# နောက် write_script() ခေါ်တိုင်း ဘယ် model တွေ စမ်းပြီး ဘာဖြစ်လဲ ဆိုတာ
+# ဒီမှာ မှတ်ထားတယ် — app.py က 🔍 section မှာ ပြဖို့။
+# (အောင်တဲ့ model တစ်ခု ရှိရင် ကျန်တဲ့ အမှားတွေ ပျောက်သွားလို့ ဒီလို မှတ်ရတာ)
+LAST_LLM_ATTEMPTS = []
+
+
 def _clean_script_text(t):
     """Script စာသားထဲက ကွင်းခတ် အချိန်အမှတ်တွေ ([6s] [8s] ...) ကို
     နေရာမရွေး ဖျက် — TTS ဖတ်တာ/စာတန်းထိုးမှာ ပေါ်မလာအောင်။"""
@@ -452,6 +458,7 @@ def write_script(segments, provider="openrouter", keys=None, model=""):
     prompt = SCRIPT_PROMPT.format(transcript=transcript)
     order = [provider] + [p for p in LLM_PROVIDERS if p != provider and p in keys]
     errors = []
+    LAST_LLM_ATTEMPTS.clear()
     for prov in order:
         base_url, defaults = LLM_PROVIDERS[prov]
         models = (([model] if prov == provider and model else [])
@@ -460,14 +467,22 @@ def write_script(segments, provider="openrouter", keys=None, model=""):
             for attempt in range(2):
                 try:
                     text = _llm_once(base_url, keys[prov], prov, m, prompt)
+                    LAST_LLM_ATTEMPTS.append(
+                        {"model": f"{prov}/{m}", "ok": True, "error": ""})
                     return _normalize_script(text), f"{prov}/{m}"
                 except RuntimeError as ex:
                     if str(ex).startswith("429") and attempt == 0:
                         time.sleep(8)
                         continue
                     errors.append(f"{prov}/{m} -> {str(ex)[:60]}")
+                    LAST_LLM_ATTEMPTS.append(
+                        {"model": f"{prov}/{m}", "ok": False,
+                         "error": str(ex)[:200]})
                     break
                 except Exception as ex:
                     errors.append(f"{prov}/{m} -> {type(ex).__name__}")
+                    LAST_LLM_ATTEMPTS.append(
+                        {"model": f"{prov}/{m}", "ok": False,
+                         "error": f"{type(ex).__name__}: {str(ex)[:150]}"})
                     break
     raise RuntimeError("AI model တွေ အကုန် မရပါ: " + " | ".join(errors))
