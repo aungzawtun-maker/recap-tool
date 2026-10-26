@@ -32,7 +32,7 @@ engine = st.sidebar.selectbox(
     index=1,
     format_func=lambda e: {
         "gtts": "gTTS (အခမဲ့၊ အသံစက်ဆန်)",
-        "edgetts": "Edge TTS (မြန်မာ Thiha/Nilar၊ အခမဲ့)",
+        "edgetts": "Edge TTS (မြန်မာ + English၊ အခမဲ့)",
         "elevenlabs": "ElevenLabs (API key လို၊ အသံကောင်း)",
     }[e],
 )
@@ -40,8 +40,14 @@ api_key, voice_id = "", ""
 if engine == "edgetts":
     voice_id = st.sidebar.selectbox(
         "အသံ ရွေးပါ",
-        ["my-MM-ThihaNeural", "my-MM-NilarNeural"],
-        format_func=lambda v: "Thiha (အမျိုးသား)" if "Thiha" in v else "Nilar (အမျိုးသမီး)",
+        ["my-MM-ThihaNeural", "my-MM-NilarNeural",
+         "en-US-AriaNeural", "en-US-GuyNeural"],
+        format_func=lambda v: {
+            "my-MM-ThihaNeural": "Thiha (မြန်မာ, အမျိုးသား)",
+            "my-MM-NilarNeural": "Nilar (မြန်မာ, အမျိုးသမီး)",
+            "en-US-AriaNeural": "Aria (English, အမျိုးသမီး)",
+            "en-US-GuyNeural": "Guy (English, အမျိုးသား)",
+        }[v],
     )
 if engine == "elevenlabs":
     api_key = st.sidebar.text_input("ElevenLabs API key", type="password",
@@ -153,7 +159,14 @@ if "transcript" in st.session_state:
     st.subheader("Transcript (မူရင်း စကားပြော)")
     for s, e, t in st.session_state["transcript"]:
         st.text(f"[{s:05.1f} - {e:05.1f}] {t}")
-    if st.button("🤖 Script အလိုအလျောက် ရေး (AI)"):
+    col_my, col_en = st.columns(2)
+    with col_my:
+        gen_my = st.button("🇲🇲 မြန်မာ Script (AI)")
+    with col_en:
+        gen_en = st.button("🇬🇧 English Script (AI)")
+    if gen_my or gen_en:
+        lang = "my" if gen_my else "en"
+        lang_name = "မြန်မာ" if gen_my else "English"
         keys = {p: k.strip() for p, k in ai_keys.items() if k.strip()}
         if not keys:
             st.error("Sidebar မှာ AI key တစ်ခု ထည့်ပါ (OpenRouter / Groq / NVIDIA တစ်ခုခု)")
@@ -162,9 +175,10 @@ if "transcript" in st.session_state:
                 with st.spinner("AI က script ရေးနေတယ်... (model တစ်ခု မရရင် နောက်တစ်ခု စမ်းနေမယ်)"):
                     script_out, used_model = pipeline.write_script(
                         st.session_state["transcript"],
-                        provider=ai_provider, keys=keys, model=ai_model)
+                        provider=ai_provider, keys=keys, model=ai_model,
+                        lang=lang)
                     st.session_state["script_box"] = script_out
-                st.success(f"Script ရပြီ — သုံးတဲ့ model: {used_model} (အောက်မှာ ပြင်လို့ရတယ်)")
+                st.success(f"Script ရပြီ — {lang_name} (သုံးတဲ့ model: {used_model}) (အောက်မှာ ပြင်လို့ရတယ်)")
             except Exception as ex:
                 st.error(f"Script မရပါ: {ex}")
             attempts = getattr(pipeline, "LAST_LLM_ATTEMPTS", [])

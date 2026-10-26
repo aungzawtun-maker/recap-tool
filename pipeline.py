@@ -331,6 +331,23 @@ Transcript:
 {transcript}
 """
 
+SCRIPT_PROMPT_EN = """You are a funny movie recap narrator.
+Read the video transcript below (with timestamps) and write a funny English voice-over recap script.
+
+Rules:
+- Output ONLY lines in this exact format: start_second | text
+  Example: 0 | He's untying the rope. What's he planning?
+- Never use bracket timestamps like [0s] from the transcript — only numbers and |
+- Write as an outside narrator watching the scene, NOT as a character speaking in first person (for example: "The guy refuses to help")
+- Keep the start seconds aligned with the transcript times
+- Keep each line short (about 8-12 words) so the narration fits the video (TTS speaks about 2-3 words per second)
+- Be funny, but don't distort the real story
+- No explanations — output only the script lines
+
+Transcript:
+{transcript}
+"""
+
 
 # provider -> (API base URL, [model အစဉ် — ပထမဟာ မရရင် နောက်တစ်ခု စမ်းမယ်])
 # အကုန်လုံး OpenAI-compatible chat/completions ပုံစံ သုံးကြတယ်။
@@ -451,8 +468,9 @@ def _llm_once(base_url, api_key, provider, model, prompt):
     return r.json()["choices"][0]["message"]["content"].strip()
 
 
-def write_script(segments, provider="openrouter", keys=None, model=""):
+def write_script(segments, provider="openrouter", keys=None, model="", lang="my"):
     """Transcript ကို LLM နဲ့ recap script ပြောင်း။
+    lang="my" → မြန်မာ script, lang="en" → English script။
     segments = [(start, end, text), ...]
     keys = {"openrouter": "...", "groq": "...", "nvidia": "..."} (ရှိတဲ့ key ပဲ ထည့်)
     ရွေးထားတဲ့ provider/model ကနေ စ; မရရင် (404/5xx) နောက် model၊
@@ -467,7 +485,7 @@ def write_script(segments, provider="openrouter", keys=None, model=""):
     if provider not in keys:
         provider = next(iter(keys))
     transcript = "\n".join(f"[{s:.0f}s] {t}" for s, e, t in segments)
-    prompt = SCRIPT_PROMPT.format(transcript=transcript)
+    prompt = (SCRIPT_PROMPT_EN if lang == "en" else SCRIPT_PROMPT).format(transcript=transcript)
     order = [provider] + [p for p in LLM_PROVIDERS if p != provider and p in keys]
     errors = []
     LAST_LLM_ATTEMPTS.clear()
