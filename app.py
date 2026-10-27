@@ -153,6 +153,7 @@ if video_path and st.button("📝 Transcript ထုတ်မယ် (Whisper)"):
         with st.spinner("Local Whisper နဲ့ စာသားပြောင်းနေတယ်... (base model, ခဏကြာနိုင်)"):
             segs, lang = pipeline.transcribe(audio)
     st.session_state["transcript"] = segs
+    st.session_state["transcript_lang"] = lang
     st.success(f"ပြီးပြီ — ဘာသာစကား: {lang}, {len(segs)} ပိုဒ်")
 
 if "transcript" in st.session_state:
@@ -190,6 +191,37 @@ if "transcript" in st.session_state:
                         else:
                             st.write(f"❌ {a['model']} — {a['error']}")
 
+# ---------- ဘာသာပြန် စာတန်းထိုး (အသံမပါ) ----------
+if "transcript" in st.session_state:
+    st.subheader("🌐 ဘာသာပြန် စာတန်းထိုး (အသံမပါ)")
+    st.caption("သီချင်း / ဇာတ်ကားအတို ကို မူရင်းအသံအတိုင်း ဘာသာပြန်စာတန်းထိုးမယ် — နောက်ခံစကားပြော မပါဘူး")
+    tr_target_label = st.selectbox(
+        "ဘာသာပြန်မယ့် ဘာသာ",
+        ["မြန်မာ", "English"],
+        help="မူရင်းဘာသာက transcript မှာ သိပြီးသား — ဒါက ပြန်မယ့် ဘာသာ")
+    tr_target = {"မြန်မာ": "my", "English": "en"}[tr_target_label]
+    tr_style_label = st.selectbox(
+        "ဘာသာပြန်ပုံစံ",
+        ["သဘာဝကျ (ဆီလျော်အောင်)", "တိုက်ရိုက်"],
+        help="သဘာဝကျ = ဖတ်လို့ကောင်း, သီချင်းဆို ဆိုလို့ကောင်း; တိုက်ရိုက် = မူရင်းစကားလုံး အတိုင်း")
+    tr_style = {"သဘာဝကျ (ဆီလျော်အောင်)": "natural", "တိုက်ရိုက်": "literal"}[tr_style_label]
+    if st.button("🌐 ဘာသာပြန်မယ် (AI)"):
+        keys = {p: k.strip() for p, k in ai_keys.items() if k.strip()}
+        if not keys:
+            st.error("Sidebar မှာ AI key တစ်ခု ထည့်ပါ (OpenRouter / Groq / NVIDIA တစ်ခုခု)")
+        else:
+            try:
+                with st.spinner("AI က ဘာသာပြန်နေတယ်..."):
+                    trans_out, used_model = pipeline.translate_script(
+                        st.session_state["transcript"],
+                        st.session_state.get("transcript_lang", "?"),
+                        provider=ai_provider, keys=keys, model=ai_model,
+                        target=tr_target, style=tr_style)
+                    st.session_state["trans_box"] = trans_out
+                st.success(f"ဘာသာပြန် ရပြီ (သုံးတဲ့ model: {used_model}) (အောက်မှာ ပြင်လို့ရတယ်)")
+            except Exception as ex:
+                st.error(f"ဘာသာပြန် မရပါ: {ex}")
+
 # ---------- အဆင့် ၃: Script ပြင်ရေး ----------
 st.subheader("✍️ Recap Script")
 st.caption("တစ်ကြောင်းကို `စမယ့်စက္ကန့် | စာသား` ပုံစံနဲ့ ရေးပါ။ "
@@ -199,6 +231,11 @@ if "script_box" not in st.session_state:
 script_text = st.text_area(
     "Script", height=180, key="script_box",
     placeholder="🤖 AI ခလုတ် နှိပ်ရင် ဒီမှာ script ပေါ်လာမယ် — ဒါမှမဟုတ် ကိုယ်တိုင် `0 | စာသား` ပုံစံနဲ့ ရေးထည့်လို့လည်း ရတယ်")
+if "trans_box" not in st.session_state:
+    st.session_state["trans_box"] = ""
+trans_text = st.text_area(
+    "ဘာသာပြန် Script", height=180, key="trans_box",
+    placeholder="🌐 ဘာသာပြန် ခလုတ် နှိပ်ရင် ဒီမှာ ဘာသာပြန် စာကြောင်းတွေ ပေါ်လာမယ် — `စမယ့်စက္ကန့် | စာသား` ပုံစံ")
 
 
 def _clean_script_text(t):
@@ -252,6 +289,11 @@ def parse_script(text):
 
 
 # ---------- အဆင့် ၄: ဗီဒီယို ထုတ် ----------
+mode_label = st.selectbox(
+    "ဗီဒီယို မုဒ်",
+    ["🎬 Recap (နောက်ခံစကားပြော)", "🌐 ဘာသာပြန် (အသံမပါ, မူရင်းအသံ 100%)"],
+    help="Recap = နောက်ခံစကားပြော + စာတန်း; ဘာသာပြန် = မူရင်းအသံအတိုင်း + ဘာသာပြန် စာတန်းထိုး")
+mode_translate = mode_label.startswith("🌐")
 add_subs = st.checkbox(
     "🔤 စာတန်းထိုး (subtitles) ဗီဒီယိုထဲ ထည့်မယ်",
     value=True,
@@ -295,30 +337,51 @@ logo_file = st.file_uploader(
     type=["png"],
     help="အပေါ်ညာထောင့်မှာ တင်မယ် — အကြည် (transparent) PNG ဆို အလှဆုံး, မရှိရင် ကျော်လို့ရတယ်")
 if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", type="primary"):
-    if engine == "elevenlabs" and not api_key:
-        st.error("ElevenLabs သုံးမယ်ဆို sidebar မှာ API key အရင် ထည့်ပါ")
-        st.stop()
-    script = parse_script(script_text)
-    if not script:
-        st.error("Script မရှိသေးဘူး — အရင် AI နဲ့ ရေးခိုင်းပါ, ဒါမှမဟုတ် box ထဲ ကိုယ်တိုင် ရေးထည့်ပါ")
-        st.stop()
+    timed = None
+    if mode_translate:
+        trans_script = parse_script(trans_text)
+        if not trans_script:
+            st.error("ဘာသာပြန် Script မရှိသေးဘူး — အရင် 🌐 ဘာသာပြန်မယ် ခလုတ် နှိပ်ပါ, ဒါမှမဟုတ် box ထဲ ကိုယ်တိုင် ရေးထည့်ပါ")
+            st.stop()
+        if "transcript" not in st.session_state:
+            st.error("Transcript မရှိသေးဘူး — အရင် Transcript ထုတ်ပါ")
+            st.stop()
+        timed = pipeline.translation_timings(trans_script, st.session_state["transcript"])
+    else:
+        if engine == "elevenlabs" and not api_key:
+            st.error("ElevenLabs သုံးမယ်ဆို sidebar မှာ API key အရင် ထည့်ပါ")
+            st.stop()
+        script = parse_script(script_text)
+        if not script:
+            st.error("Script မရှိသေးဘူး — အရင် AI နဲ့ ရေးခိုင်းပါ, ဒါမှမဟုတ် box ထဲ ကိုယ်တိုင် ရေးထည့်ပါ")
+            st.stop()
     logo_path = None
     if logo_file is not None:
         logo_path = os.path.join(WORKDIR, "logo.png")
         with open(logo_path, "wb") as f:
             f.write(logo_file.getbuffer())
     status = st.empty()
-    with st.spinner("TTS + ဗီဒီယို ဆက်နေတယ်... (မိနစ်ပိုင်း ကြာနိုင်တယ်)"):
-        files = pipeline.tts_all(script, engine, WORKDIR,
-                                 api_key=api_key, voice_id=voice_id,
-                                 log=lambda m: status.write(m))
-        final, fit_rate = pipeline.build_video(video_path, files, WORKDIR,
-                                                log=lambda m: status.write(m),
-                                                orig_volume=orig_volume,
-                                                blur_band=blur_band,
-                                                zoom=zoom, pip=pip,
-                                                effect=effect,
-                                                logo_path=logo_path)
+    if mode_translate:
+        with st.spinner("ဘာသာပြန် ဗီဒီယို ဆက်နေတယ်..."):
+            final, fit_rate = pipeline.build_video(video_path, [], WORKDIR,
+                                                    log=lambda m: status.write(m),
+                                                    orig_volume=1.0,
+                                                    blur_band=blur_band,
+                                                    zoom=zoom, pip=pip,
+                                                    effect=effect,
+                                                    logo_path=logo_path)
+    else:
+        with st.spinner("TTS + ဗီဒီယို ဆက်နေတယ်... (မိနစ်ပိုင်း ကြာနိုင်တယ်)"):
+            files = pipeline.tts_all(script, engine, WORKDIR,
+                                     api_key=api_key, voice_id=voice_id,
+                                     log=lambda m: status.write(m))
+            final, fit_rate = pipeline.build_video(video_path, files, WORKDIR,
+                                                    log=lambda m: status.write(m),
+                                                    orig_volume=orig_volume,
+                                                    blur_band=blur_band,
+                                                    zoom=zoom, pip=pip,
+                                                    effect=effect,
+                                                    logo_path=logo_path)
     st.success("ပြီးပါပြီ! 🎉")
     st.video(final)
     with open(final, "rb") as f:
@@ -326,13 +389,14 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
                            file_name="final_recap.mp4", mime="video/mp4")
 
     # ---------- စာတန်းထိုး: SRT ထုတ် + ဗီဒီယိုထဲ ထည့် ----------
-    placed = pipeline.place_timings(files)  # [(path, start, dur)]
-    timed = [(start, dur, text)
-             for (path, start, dur), (target, text) in zip(placed, script)]
-    if fit_rate > 1.0:
-        # narration ကို atempo နဲ့ မြန်ထားရင် စာတန်းလည်း အတူတူ မြန်မှ
-        # အသံနဲ့ ကိုက်မယ် — မဟုတ်ရင် စာတန်း နောက်ကျကျန်ခဲ့မယ်
-        timed = [(s / fit_rate, d / fit_rate, t) for (s, d, t) in timed]
+    if timed is None:
+        placed = pipeline.place_timings(files)  # [(path, start, dur)]
+        timed = [(start, dur, text)
+                 for (path, start, dur), (target, text) in zip(placed, script)]
+        if fit_rate > 1.0:
+            # narration ကို atempo နဲ့ မြန်ထားရင် စာတန်းလည်း အတူတူ မြန်မှ
+            # အသံနဲ့ ကိုက်မယ် — မဟုတ်ရင် စာတန်း နောက်ကျကျန်ခဲ့မယ်
+            timed = [(s / fit_rate, d / fit_rate, t) for (s, d, t) in timed]
     srt_path = os.path.join(WORKDIR, "recap.srt")
     with st.spinner("SRT စာတန်းဖိုင် ထုတ်နေတယ်..."):
         pipeline.write_srt(timed, srt_path)

@@ -171,28 +171,34 @@ def build_video(video_path, files, workdir, log=print, orig_volume=0.0,
     log(f"Narration {total:.1f}s / Video {video_dur:.1f}s")
     rate = 1.0
 
-    inputs, filters = [], []
-    for i, (path, start, dur) in enumerate(placed):
-        inputs += ["-i", path]
-        ms = int(start * 1000)
-        filters.append(f"[{i}:a]adelay={ms}|{ms}[a{i}]")
-    mix = "".join(f"[a{i}]" for i in range(len(placed)))
-    filters.append(f"{mix}amix=inputs={len(placed)}:normalize=0[narr]")
-    narr = os.path.join(workdir, "narration.wav")
-    subprocess.run(["ffmpeg", "-y", *inputs, "-filter_complex",
-                    ";".join(filters), "-map", "[narr]", narr],
-                   check=True, capture_output=True)
-    if total > video_dur:  # ရှည်လွန်းရင် အနည်းငယ် အမြန်တင်
-        rate = total / video_dur
-        fixed = os.path.join(workdir, "narration_fit.wav")
-        subprocess.run(["ffmpeg", "-y", "-i", narr, "-filter:a",
-                        f"atempo={rate:.3f}", fixed],
+    narr = None
+    if files:
+        inputs, filters = [], []
+        for i, (path, start, dur) in enumerate(placed):
+            inputs += ["-i", path]
+            ms = int(start * 1000)
+            filters.append(f"[{i}:a]adelay={ms}|{ms}[a{i}]")
+        mix = "".join(f"[a{i}]" for i in range(len(placed)))
+        filters.append(f"{mix}amix=inputs={len(placed)}:normalize=0[narr]")
+        narr = os.path.join(workdir, "narration.wav")
+        subprocess.run(["ffmpeg", "-y", *inputs, "-filter_complex",
+                        ";".join(filters), "-map", "[narr]", narr],
                        check=True, capture_output=True)
-        narr = fixed
-        log(f"atempo x{rate:.2f} (စာတန်းလည်း လိုက်မြန်မယ်)")
+        if total > video_dur:  # ရှည်လွန်းရင် အနည်းငယ် အမြန်တင်
+            rate = total / video_dur
+            fixed = os.path.join(workdir, "narration_fit.wav")
+            subprocess.run(["ffmpeg", "-y", "-i", narr, "-filter:a",
+                            f"atempo={rate:.3f}", fixed],
+                           check=True, capture_output=True)
+            narr = fixed
+            log(f"atempo x{rate:.2f} (စာတန်းလည်း လိုက်မြန်မယ်)")
+    else:
+        # ဘာသာပြန် မုဒ် — narration မပါ, မူရင်းအသံပဲ သုံးမယ်
+        log("ဘာသာပြန် မုဒ် — narration မပါ")
 
     # ---------- video filter chain (လိုမှ တည်, အထွက် size မပြောင်း) ----------
     vw, vh = probe_dimensions(video_path)
+    logo_idx = 2 if narr else 1  # mux inputs: video, [narr], [logo]
     vf = []
     cur = "0:v"
     n = [0]
@@ -236,21 +242,28 @@ def build_video(video_path, files, workdir, log=print, orig_volume=0.0,
         cur = nxt
     if logo_path and os.path.exists(logo_path):
         nxt = _next()
-        vf.append("[2:v]scale=160:-2,format=rgba[logo]")
+        vf.append(f"[{logo_idx}:v]scale=160:-2,format=rgba[logo]")
         vf.append(f"[{cur}][logo]overlay=W-w-10:10[{nxt}]")
         cur = nxt
 
     # ---------- audio chain ----------
-    if orig_volume and orig_volume > 0:
-        afc = (f"[0:a]volume={orig_volume}[orig];"
-               f"[orig][1:a]amix=inputs=2:normalize=0[aout]")
+    if narr:
+        if orig_volume and orig_volume > 0:
+            afc = (f"[0:a]volume={orig_volume}[orig];"
+                   f"[orig][1:a]amix=inputs=2:normalize=0[aout]")
+        else:
+            # narration သီးသန့် — မူရင်းဗီဒီယိုထဲက လူပြောသံ/အသံတွေ လုံးဝ မပါ
+            # (apad က narration တိုနေရင် တိတ်ဆိတ်နဲ့ ဖြည့်ပေးလို့ ဗီဒီယို အပြည့်ထွက်တယ်)
+            afc = "[1:a]apad[aout]"
     else:
-        # narration သီးသန့် — မူရင်းဗီဒီယိုထဲက လူပြောသံ/အသံတွေ လုံးဝ မပါ
-        # (apad က narration တိုနေရင် တိတ်ဆိတ်နဲ့ ဖြည့်ပေးလို့ ဗီဒီယို အပြည့်ထွက်တယ်)
-        afc = "[1:a]apad[aout]"
+        # narration မပါ — မူရင်းအသံ အပြည့် (ဘာသာပြန် မုဒ်မှာ အဓိက အသံ)
+        vol = orig_volume if orig_volume and orig_volume > 0 else 1.0
+        afc = f"[0:a]volume={vol}[aout]"
 
     final = os.path.join(workdir, "final_recap.mp4")
-    mux_inputs = ["-i", video_path, "-i", narr]
+    mux_inputs = ["-i", video_path]
+    if narr:
+        mux_inputs += ["-i", narr]
     if logo_path and os.path.exists(logo_path):
         mux_inputs += ["-i", logo_path]
     if vf:
@@ -433,6 +446,25 @@ Transcript:
 """
 
 
+TRANSLATE_PROMPT = """You are a professional subtitle translator.
+Translate the transcript below from {source} to {target}.
+
+Rules:
+- Output ONE line per transcript segment, in the same order, same count.
+- Each line in exactly this format: start_second | translated text
+  Example: 0 | Hello, how are you?
+- Use the segment's start second (the number in [Ns]) as the line's start.
+- {style_line}
+- For songs, keep the translation singable and keep the feeling — a
+  stiff word-for-word version ruins a song.
+- No explanations, no extra lines, no bracket timestamps — only
+  "start | text" lines.
+
+Transcript:
+{transcript}
+"""
+
+
 # provider -> (API base URL, [model အစဉ် — ပထမဟာ မရရင် နောက်တစ်ခု စမ်းမယ်])
 # အကုန်လုံး OpenAI-compatible chat/completions ပုံစံ သုံးကြတယ်။
 LLM_PROVIDERS = {
@@ -600,3 +632,91 @@ def write_script(segments, provider="openrouter", keys=None, model="", lang="my"
                          "error": f"{type(ex).__name__}: {str(ex)[:150]}"})
                     break
     raise RuntimeError("AI model တွေ အကုန် မရပါ: " + " | ".join(errors))
+
+
+def translate_script(segments, source_lang, provider="openrouter", keys=None,
+                     model="", target="my", style="natural"):
+    """Transcript segments -> ဘာသာပြန် စာတန်းထိုး စာသားတွေ။
+    segments = [(start, end, text), ...]; source_lang = Whisper language
+    code (ဥပမာ "en", "my")။ target: "my" (မြန်မာ) / "en" (English)။
+    style: "natural" (ဆီလျော်အောင်, သဘာဝကျ) / "literal" (တိုက်ရိုက်)။
+    write_script ရဲ့ provider/model fallback loop အတိုင်း သုံးတယ်
+    (recap လမ်းကြောင်း မထိအောင် သပ်သပ် ရေးထားတာ)။
+    ပြန်ပေးတာ: ("start | text" စာကြောင်းတွေ, "provider/model")။
+    အရေအတွက်/အစဉ်လိုက်က transcript အတိုင်း ဖြစ်ရမယ် (သီချင်းရဲ့
+    ထပ်နေတဲ့ စာကြောင်းတွေလည်း အကုန် ပါရမယ် — dedupe မလုပ်ဘူး)။"""
+    import re
+    import time
+    keys = {p: k for p, k in (keys or {}).items() if k}
+    if not keys:
+        raise RuntimeError("AI key တစ်လုံးမှ မထည့်ရသေးပါ — sidebar မှာ key ထည့်ပါ")
+    if provider not in keys:
+        provider = next(iter(keys))
+    transcript = "\n".join(f"[{s:.0f}s] {t}" for s, e, t in segments)
+    style_line = ("Translate naturally and idiomatically — it should read like it was written in the target language, not like a translation."
+                  if style == "natural" else
+                  "Translate closely and literally, keeping the original wording and word order as much as the target language allows.")
+    source_name = {"my": "Burmese", "en": "English"}.get(
+        source_lang, "the transcript's language")
+    target_name = "Burmese" if target == "my" else "English"
+    prompt = TRANSLATE_PROMPT.format(
+        source=source_name, target=target_name,
+        style_line=style_line, transcript=transcript)
+    order = [provider] + [p for p in LLM_PROVIDERS if p != provider and p in keys]
+    errors = []
+    LAST_LLM_ATTEMPTS.clear()
+    for prov in order:
+        base_url, defaults = LLM_PROVIDERS[prov]
+        models = (([model] if prov == provider and model else [])
+                  + [m for m in defaults if m != model])
+        for m in models:
+            for attempt in range(2):
+                try:
+                    text = _llm_once(base_url, keys[prov], prov, m, prompt)
+                    LAST_LLM_ATTEMPTS.append(
+                        {"model": f"{prov}/{m}", "ok": True, "error": ""})
+                    lines = []
+                    for row in text.splitlines():
+                        mm = re.match(r"^\s*(\d+(?:\.\d+)?)\s*\|\s*(.+)$",
+                                      row.strip())
+                        if mm:
+                            lines.append(f"{mm.group(1)} | {mm.group(2).strip()}")
+                    if not lines:
+                        raise RuntimeError("ဘာသာပြန် output ထဲမှာ စာကြောင်း မတွေ့ပါ")
+                    return "\n".join(lines), f"{prov}/{m}"
+                except RuntimeError as ex:
+                    if str(ex).startswith("429") and attempt == 0:
+                        time.sleep(8)
+                        continue
+                    errors.append(f"{prov}/{m} -> {str(ex)[:60]}")
+                    LAST_LLM_ATTEMPTS.append(
+                        {"model": f"{prov}/{m}", "ok": False,
+                         "error": str(ex)[:200]})
+                    break
+                except Exception as ex:
+                    errors.append(f"{prov}/{m} -> {type(ex).__name__}")
+                    LAST_LLM_ATTEMPTS.append(
+                        {"model": f"{prov}/{m}", "ok": False,
+                         "error": f"{type(ex).__name__}: {str(ex)[:150]}"})
+                    break
+    raise RuntimeError("AI model တွေ အကုန် မရပါ: " + " | ".join(errors))
+
+
+def translation_timings(parsed, segments):
+    """ဘာသာပြန် script (parsed = [(start, text)]) + မူရင်း transcript
+    segments ([(start, end, text)]) -> [(start, dur, text)]။
+    စာကြောင်းတိုင်းရဲ့ အချိန်ကို အနီးဆုံး transcript segment က ယူတယ်
+    (3 စက္ကန့်အတွင်း ရှာမတွေ့ရင် dur = 3.0)။ စာတန်းထိုးရဲ့
+    အချိန်က မူရင်း ပြောဆိုချိန်နဲ့ ကိုက်ရမယ် (narration လို နေရာချတာ မဟုတ်)။"""
+    timed = []
+    for start, text in parsed:
+        best_dur, best_dt = 3.0, 1e9
+        for s, e, _t in segments:
+            dt = abs(s - float(start))
+            if dt < best_dt:
+                best_dt = dt
+                if dt <= 3.0:
+                    best_dur = max(0.5, float(e) - float(s))
+        timed.append((float(start), best_dur, text))
+    timed.sort(key=lambda x: x[0])
+    return timed
