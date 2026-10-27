@@ -278,9 +278,9 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
         files = pipeline.tts_all(script, engine, WORKDIR,
                                  api_key=api_key, voice_id=voice_id,
                                  log=lambda m: status.write(m))
-        final = pipeline.build_video(video_path, files, WORKDIR,
-                                      log=lambda m: status.write(m),
-                                      keep_orig=keep_orig)
+        final, fit_rate = pipeline.build_video(video_path, files, WORKDIR,
+                                                log=lambda m: status.write(m),
+                                                keep_orig=keep_orig)
     st.success("ပြီးပါပြီ! 🎉")
     st.video(final)
     with open(final, "rb") as f:
@@ -291,6 +291,10 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
     placed = pipeline.place_timings(files)  # [(path, start, dur)]
     timed = [(start, dur, text)
              for (path, start, dur), (target, text) in zip(placed, script)]
+    if fit_rate > 1.0:
+        # narration ကို atempo နဲ့ မြန်ထားရင် စာတန်းလည်း အတူတူ မြန်မှ
+        # အသံနဲ့ ကိုက်မယ် — မဟုတ်ရင် စာတန်း နောက်ကျကျန်ခဲ့မယ်
+        timed = [(s / fit_rate, d / fit_rate, t) for (s, d, t) in timed]
     srt_path = os.path.join(WORKDIR, "recap.srt")
     with st.spinner("SRT စာတန်းဖိုင် ထုတ်နေတယ်..."):
         pipeline.write_srt(timed, srt_path)

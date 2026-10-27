@@ -150,10 +150,15 @@ def place_timings(files):
 
 
 def build_video(video_path, files, workdir, log=print, keep_orig=False):
+    """Narration စီ + ဗီဒီယိုနဲ့ ပြန်ဆက်။
+    ပြန်ပေးတာ: (final_path, fit_rate)။ fit_rate > 1 ဆို narration ကို
+    atempo နဲ့ အမြန်တင်ထားတာ — စာတန်းအချိန်တွေကို fit_rate နဲ့
+    စားမှ (start/rate, dur/rate) အသံနဲ့ ကိုက်မယ်။"""
     video_dur = probe_duration(video_path)
     placed = place_timings(files)
     total = placed[-1][1] + placed[-1][2] if placed else 0.0
     log(f"Narration {total:.1f}s / Video {video_dur:.1f}s")
+    rate = 1.0
 
     inputs, filters = [], []
     for i, (path, start, dur) in enumerate(placed):
@@ -173,7 +178,7 @@ def build_video(video_path, files, workdir, log=print, keep_orig=False):
                         f"atempo={rate:.3f}", fixed],
                        check=True, capture_output=True)
         narr = fixed
-        log(f"atempo x{rate:.2f}")
+        log(f"atempo x{rate:.2f} (စာတန်းလည်း လိုက်မြန်မယ်)")
 
     final = os.path.join(workdir, "final_recap.mp4")
     if keep_orig:
@@ -187,7 +192,7 @@ def build_video(video_path, files, workdir, log=print, keep_orig=False):
                     "-filter_complex", fc, "-map", "0:v", "-map", "[aout]",
                     "-c:v", "copy", "-c:a", "aac", "-shortest", final],
                    check=True, capture_output=True)
-    return final
+    return final, rate
 
 
 # ---------------- Subtitles (SRT + burn-in) ----------------
