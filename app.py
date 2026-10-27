@@ -261,10 +261,39 @@ sub_size_label = st.selectbox(
     ["အလတ်", "သေး", "ကြီး"],
     help="အလတ် (64) က ပုံမှန် — ဖုန်းကြည့်ရင် သေးနေရင် ကြီး (88) ရွေးပါ")
 sub_size = {"သေး": 44, "အလတ်": 64, "ကြီး": 88}[sub_size_label]
-keep_orig = st.checkbox(
-    "🎧 မူရင်းအသံ နည်းနည်းထားမယ် (12%)",
+orig_label = st.selectbox(
+    "🎧 မူရင်းအသံ",
+    ["မထည့်", "10%", "25%", "50%", "100%"],
+    help="narration နဲ့ ရောမယ့် မူရင်းအသံ အသံအတိုးအကျယ် — မထည့်ရင် narration သီးသန့်ပဲ ထွက်မယ်")
+orig_volume = {"မထည့်": 0.0, "10%": 0.10, "25%": 0.25, "50%": 0.50, "100%": 1.0}[orig_label]
+sub_pos_label = st.selectbox(
+    "စာတန်းနေရာ",
+    ["အောက်", "အလယ်", "အပေါ်"],
+    help="စာတန်း ဗီဒီယိုရဲ့ ဘယ်နေရာမှာ ပေါ်မလဲ — မူရင်းစာသား blur လုပ်ထားတဲ့နေရာနဲ့ မထပ်အောင် ရွေးပါ")
+sub_pos = {"အောက်": "bottom", "အလယ်": "middle", "အပေါ်": "top"}[sub_pos_label]
+blur_label = st.selectbox(
+    "မူရင်းစာသား ဖျောက် (blur)",
+    ["မလုပ်", "အပေါ်", "အလယ်", "အောက်"],
+    help="မူရင်း ဗီဒီယိုထဲမှာ ပါနေတဲ့ စာသား (ဥပမာ အသင့်ပါ စာတန်း) ရှိတဲ့နေရာကို မှုန်ဝါးပေးမယ် — စာသား လုံးဝ ပျောက်သွားတာမဟုတ်ဘူး, အဲဒီနေရာက မှုန်သွားရုံပဲ")
+blur_band = {"မလုပ်": "none", "အပေါ်": "top", "အလယ်": "middle", "အောက်": "bottom"}[blur_label]
+zoom_label = st.selectbox(
+    "🔍 Zoom",
+    ["မလုပ်", "အထဲ (zoom in)", "အပြင် (zoom out)"],
+    help="အထဲ = 10% ချဲ့ (အနားဖြတ်), အပြင် = 10% သေး + အနက်ကွက်")
+zoom = {"မလုပ်": "none", "အထဲ (zoom in)": "in", "အပြင် (zoom out)": "out"}[zoom_label]
+pip = st.checkbox(
+    "🖼️ Picture-in-picture",
     value=False,
-    help="မနှိပ်ရင် narration သီးသန့်ပဲ ထွက်မယ် — မူရင်းဗီဒီယိုထဲက လူပြောသံတွေ မပါတော့ဘူး")
+    help="ဗီဒီယိုကို 85% သေးပြီး မှုန်ဝါးထားတဲ့ နောက်ခံပေါ် တင်မယ်")
+effect_label = st.selectbox(
+    "✨ Effect",
+    ["မလုပ်", "မှန်ပြောင်းပြန် (mirror)", "အဖြူအမည်း"],
+    help="မူရင်းနဲ့ ပုံစံ ကွဲအောင် — Content ID တိုက်မိတာ လျှော့ဖို့")
+effect = {"မလုပ်": "none", "မှန်ပြောင်းပြန် (mirror)": "mirror", "အဖြူအမည်း": "gray"}[effect_label]
+logo_file = st.file_uploader(
+    "🔖 Logo PNG",
+    type=["png"],
+    help="အပေါ်ညာထောင့်မှာ တင်မယ် — အကြည် (transparent) PNG ဆို အလှဆုံး, မရှိရင် ကျော်လို့ရတယ်")
 if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", type="primary"):
     if engine == "elevenlabs" and not api_key:
         st.error("ElevenLabs သုံးမယ်ဆို sidebar မှာ API key အရင် ထည့်ပါ")
@@ -273,6 +302,11 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
     if not script:
         st.error("Script မရှိသေးဘူး — အရင် AI နဲ့ ရေးခိုင်းပါ, ဒါမှမဟုတ် box ထဲ ကိုယ်တိုင် ရေးထည့်ပါ")
         st.stop()
+    logo_path = None
+    if logo_file is not None:
+        logo_path = os.path.join(WORKDIR, "logo.png")
+        with open(logo_path, "wb") as f:
+            f.write(logo_file.getbuffer())
     status = st.empty()
     with st.spinner("TTS + ဗီဒီယို ဆက်နေတယ်... (မိနစ်ပိုင်း ကြာနိုင်တယ်)"):
         files = pipeline.tts_all(script, engine, WORKDIR,
@@ -280,7 +314,11 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
                                  log=lambda m: status.write(m))
         final, fit_rate = pipeline.build_video(video_path, files, WORKDIR,
                                                 log=lambda m: status.write(m),
-                                                keep_orig=keep_orig)
+                                                orig_volume=orig_volume,
+                                                blur_band=blur_band,
+                                                zoom=zoom, pip=pip,
+                                                effect=effect,
+                                                logo_path=logo_path)
     st.success("ပြီးပါပြီ! 🎉")
     st.video(final)
     with open(final, "rb") as f:
@@ -309,7 +347,8 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
                 subbed = os.path.join(WORKDIR, "final_recap_subs.mp4")
                 pipeline.burn_subtitles(final, timed, font, subbed,
                                         log=lambda m: status.write(m),
-                                        font_size=sub_size)
+                                        font_size=sub_size,
+                                        position=sub_pos)
                 st.success("စာတန်းထိုး ထည့်ပြီးပြီ! 🎉")
                 st.video(subbed)
                 with open(subbed, "rb") as f:

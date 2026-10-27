@@ -149,11 +149,22 @@ def place_timings(files):
     return placed
 
 
-def build_video(video_path, files, workdir, log=print, keep_orig=False):
+def build_video(video_path, files, workdir, log=print, orig_volume=0.0,
+                blur_band="none", zoom="none", pip=False, effect="none",
+                logo_path=None):
     """Narration စီ + ဗီဒီယိုနဲ့ ပြန်ဆက်။
     ပြန်ပေးတာ: (final_path, fit_rate)။ fit_rate > 1 ဆို narration ကို
     atempo နဲ့ အမြန်တင်ထားတာ — စာတန်းအချိန်တွေကို fit_rate နဲ့
-    စားမှ (start/rate, dur/rate) အသံနဲ့ ကိုက်မယ်။"""
+    စားမှ (start/rate, dur/rate) အသံနဲ့ ကိုက်မယ်။
+    orig_volume: မူရင်းအသံ အတိုးအကျယ် (0.0 = မထည့်, 0.1/0.25/0.5/1.0)။
+    blur_band: မူရင်းစာသား ရှိတဲ့နေရာ မှုန်ဝါးပေး
+      (none/top/middle/bottom — အမြင့် 20% ကြောင်း)။
+    zoom: none/in (10% ချဲ့)/out (10% သေး + အနက်ကွက်)။
+    pip: မှုန်နောက်ခံ + 85% ဗီဒီယို picture-in-picture။
+    effect: none/mirror (မှန်ပြောင်းပြန်)/gray (အဖြူအမည်း)။
+    logo_path: အပေါ်ညာထောင့်မှာ တင်မယ့် PNG (transparent ဆို အလှဆုံး)။
+    သတိ: video filter တစ်ခု ပါတာနဲ့ ဗီဒီယို ပြန် encode ရတယ်
+    (မပါရင် အရင်အတိုင်း -c:v copy မြန်မြန်)။"""
     video_dur = probe_duration(video_path)
     placed = place_timings(files)
     total = placed[-1][1] + placed[-1][2] if placed else 0.0
@@ -180,18 +191,84 @@ def build_video(video_path, files, workdir, log=print, keep_orig=False):
         narr = fixed
         log(f"atempo x{rate:.2f} (စာတန်းလည်း လိုက်မြန်မယ်)")
 
-    final = os.path.join(workdir, "final_recap.mp4")
-    if keep_orig:
-        # မူရင်းအသံ 12% နဲ့ ရော (အရင်အတိုင်း)
-        fc = "[0:a]volume=0.12[orig];[orig][1:a]amix=inputs=2:normalize=0[aout]"
+    # ---------- video filter chain (လိုမှ တည်, အထွက် size မပြောင်း) ----------
+    vw, vh = probe_dimensions(video_path)
+    vf = []
+    cur = "0:v"
+    n = [0]
+
+    def _next():
+        n[0] += 1
+        return f"v{n[0]}"
+
+    if blur_band in ("top", "middle", "bottom"):
+        y = {"top": "0", "middle": "ih*0.4", "bottom": "ih*0.8"}[blur_band]
+        yo = {"top": "0", "middle": "H*0.4", "bottom": "H*0.8"}[blur_band]
+        nxt = _next()
+        vf.append(f"[{cur}]split=2[base][band]")
+        vf.append(f"[band]crop=iw:ih*0.2:0:{y},boxblur=lr=20:lp=2[bandb]")
+        vf.append(f"[base][bandb]overlay=0:{yo}[{nxt}]")
+        cur = nxt
+    if effect == "mirror":
+        nxt = _next()
+        vf.append(f"[{cur}]hflip[{nxt}]")
+        cur = nxt
+    elif effect == "gray":
+        nxt = _next()
+        vf.append(f"[{cur}]format=gray[{nxt}]")
+        cur = nxt
+    if zoom == "in":
+        nxt = _next()
+        vf.append(f"[{cur}]crop=iw*0.9:ih*0.9,scale={vw}:{vh}[{nxt}]")
+        cur = nxt
+    elif zoom == "out":
+        zw, zh = vw * 90 // 100 // 2 * 2, vh * 90 // 100 // 2 * 2  # 90%, စုံကိန်း
+        nxt = _next()
+        vf.append(f"[{cur}]scale={zw}:{zh},pad={vw}:{vh}:(ow-iw)/2:(oh-ih)/2[{nxt}]")
+        cur = nxt
+    if pip:
+        pw, ph = vw * 85 // 100 // 2 * 2, vh * 85 // 100 // 2 * 2  # 85%, စုံကိန်း
+        nxt = _next()
+        vf.append(f"[{cur}]split=2[bg][fg]")
+        vf.append("[bg]boxblur=lr=20:lp=2[bgb]")
+        vf.append(f"[fg]scale={pw}:{ph}[fgs]")
+        vf.append(f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2[{nxt}]")
+        cur = nxt
+    if logo_path and os.path.exists(logo_path):
+        nxt = _next()
+        vf.append("[2:v]scale=160:-2,format=rgba[logo]")
+        vf.append(f"[{cur}][logo]overlay=W-w-10:10[{nxt}]")
+        cur = nxt
+
+    # ---------- audio chain ----------
+    if orig_volume and orig_volume > 0:
+        afc = (f"[0:a]volume={orig_volume}[orig];"
+               f"[orig][1:a]amix=inputs=2:normalize=0[aout]")
     else:
         # narration သီးသန့် — မူရင်းဗီဒီယိုထဲက လူပြောသံ/အသံတွေ လုံးဝ မပါ
         # (apad က narration တိုနေရင် တိတ်ဆိတ်နဲ့ ဖြည့်ပေးလို့ ဗီဒီယို အပြည့်ထွက်တယ်)
-        fc = "[1:a]apad[aout]"
-    subprocess.run(["ffmpeg", "-y", "-i", video_path, "-i", narr,
-                    "-filter_complex", fc, "-map", "0:v", "-map", "[aout]",
-                    "-c:v", "copy", "-c:a", "aac", "-shortest", final],
-                   check=True, capture_output=True)
+        afc = "[1:a]apad[aout]"
+
+    final = os.path.join(workdir, "final_recap.mp4")
+    mux_inputs = ["-i", video_path, "-i", narr]
+    if logo_path and os.path.exists(logo_path):
+        mux_inputs += ["-i", logo_path]
+    if vf:
+        fc = ";".join(vf + [afc])
+        subprocess.run(["ffmpeg", "-y", *mux_inputs,
+                        "-filter_complex", fc, "-map", f"[{cur}]",
+                        "-map", "[aout]",
+                        "-c:v", "libx264", "-preset", "veryfast",
+                        "-crf", "20", "-pix_fmt", "yuv420p",
+                        "-c:a", "aac", "-shortest", final],
+                       check=True, capture_output=True)
+    else:
+        subprocess.run(["ffmpeg", "-y", *mux_inputs,
+                        "-filter_complex", afc, "-map", "0:v",
+                        "-map", "[aout]",
+                        "-c:v", "copy", "-c:a", "aac",
+                        "-shortest", final],
+                       check=True, capture_output=True)
     return final, rate
 
 
@@ -266,7 +343,7 @@ def _ass_escape(text):
     return t.replace("\n", "\\N")
 
 
-def burn_subtitles(video_path, timed, font_path, out_path, log=print, font_size=64):
+def burn_subtitles(video_path, timed, font_path, out_path, log=print, font_size=64, position="bottom"):
     """Timed subtitle တွေကို ဗီဒီယိုထဲ အပြီးထည့်။
     သတိ: SRT ကို ffmpeg ရဲ့ subtitles filter နဲ့ တိုက်ရိုက်ထည့်ရင်
     ffmpeg က ASS ကို 384x288 PlayRes နဲ့ ထုတ်ပြီး ဗီဒီယို size ကို
@@ -275,7 +352,8 @@ def burn_subtitles(video_path, timed, font_path, out_path, log=print, font_size=
     ဒါကြောင့် ASS ကို ကိုယ်တိုင် ဗီဒီယိုအရွယ် အတိအကျ
     (PlayRes = video size) နဲ့ ရေးပြီး ass filter နဲ့ ထည့်တယ်။
     timed = [(start_sec, dur_sec, text), ...]
-    ပုံစံ: အဝါရောင် bold + အနက်ကွက် outline, အောက်ခြေ, MarginV 120။
+    ပုံစံ: အဝါရောင် bold + အနက်ကွက် outline။
+    position: bottom (အောက်, MarginV 120) / middle (အလယ်) / top (အပေါ်, MarginV 120)။
     font_size: စာလုံးအရွယ် (default 64 — 1080x1920 မှာ 44 က ဖုန်းကြည့်ရင် သေးလွန်းလို့)။"""
     w, h = probe_dimensions(video_path)
     events = []
@@ -288,6 +366,7 @@ def burn_subtitles(video_path, timed, font_path, out_path, log=print, font_size=
             end = min(end, events[i + 1][0] - 0.05)
         end = max(end, start + 0.5)
         fixed.append((start, end, text))
+    alignment, marginv = {"bottom": (2, 120), "middle": (5, 0), "top": (8, 120)}[position]
     lines = [
         "[Script Info]",
         "ScriptType: v4.00+",
@@ -297,7 +376,7 @@ def burn_subtitles(video_path, timed, font_path, out_path, log=print, font_size=
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Default,{MYANMAR_FONT_NAME},{font_size},&H0000FFFF,&H000000FF,&H80000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,120,120,120,1",
+        f"Style: Default,{MYANMAR_FONT_NAME},{font_size},&H0000FFFF,&H000000FF,&H80000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,{alignment},120,120,{marginv},1",
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
