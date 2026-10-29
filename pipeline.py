@@ -52,30 +52,38 @@ def _load_audio_array(audio_path):
     return np.frombuffer(raw, dtype=np.float32)
 
 
-def transcribe(audio_path, model_size="base", language=None):
+def transcribe(audio_path, model_size="base", language=None, prompt=None):
     # base က tiny ထက် စာသား အများကြီး ပိုမှန်တယ် (script အရည်အသွေးက transcript ပေါ် မူတည်လို့)။
     # Streamlit free RAM ~1GB မှာ base (int8) က အေးဆေး ဝင်တယ်။
     # language: None = အလိုအလျောက် သိ; "my" လို့ ပေးရင် မြန်မာလို့ အတင်းပြော
     # (သီချင်းမှာ Whisper က ဘာသာစကား မှားသိပြီး Latin စာနဲ့ ထွက်တတ်လို့)။
+    # prompt: Whisper ကို စာသားမစခင် ပေးတဲ့ လမ်းညွှန် — ဘာသာစကားနဲ့
+    # စာပုံစံကို ပထမစာလုံးကတည်းက မြန်မာဘက် ဦးတည်ပေးတယ်
+    # ("Koala" လို Latin loop ထပ်တာကို ဖြုတ်ဖို့)။
     from faster_whisper import WhisperModel
     model = WhisperModel(model_size, device="cpu", compute_type="int8")
     segments, info = model.transcribe(_load_audio_array(audio_path),
-                                      language=language)
+                                      language=language,
+                                      initial_prompt=prompt)
     return [(s.start, s.end, s.text.strip()) for s in segments], info.language
 
 
-def transcribe_groq(audio_path, api_key, model="whisper-large-v3", language=None):
+def transcribe_groq(audio_path, api_key, model="whisper-large-v3", language=None,
+                    prompt=None):
     """Groq cloud ပေါ်က Whisper large-v3 — local ထက် အများကြီး ပိုမှန်, မြန်, RAM မစား။
     Groq key ရှိရင်ရ (Script AI အတွက် ထည့်ထားတဲ့ key အတူတူပဲ)။
     verbose_json က အပိုဒ်လိုက် timestamp ပြန်ပေးတယ်။
     language: None = အလိုအလျောက်; "my" ဆို မြန်မာလို့ အတင်းပြော
     (သီချင်းမှာ ဘာသာစကား မှားသိပြီး Latin စာနဲ့ ထွက်တတ်လို့)။
+    prompt: ဘာသာစကားကို ပထမစာလုံးကတည်းက ဦးတည်ပေးတဲ့ လမ်းညွှန်။
     မှတ်ချက်: Groq ရဲ့ file limit 25MB — 16kHz mono WAV က ၁ မိနစ်ကို ~2MB ပဲ ရှိလို့
     clip အတိုတွေမှာ ပြဿနာ မရှိဘူး။"""
     import requests, os
     payload = {"model": model, "response_format": "verbose_json"}
     if language:
         payload["language"] = language
+    if prompt:
+        payload["prompt"] = prompt
     with open(audio_path, "rb") as f:
         r = requests.post(
             "https://api.groq.com/openai/v1/audio/transcriptions",

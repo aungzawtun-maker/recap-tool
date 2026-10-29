@@ -146,6 +146,10 @@ if video_path:
         help="မြန်မာသီချင်းဆို မြန်မာ ကို ရွေးပါ (မှားတဲ့ ဘာသာ ရွေးမိရင် ပိုမှားနိုင်တယ်)",
     )
     stt_lang = {"အလိုအလျောက်": None, "မြန်မာ": "my", "English": "en"}[stt_lang_label]
+    # ဘာသာစကားကို ပထမစာလုံးကတည်းက ဦးတည်ပေးတဲ့ prompt —
+    # ဘာသာစကား ရွေးထားမှသာ ပေး (Auto မှာ မှားတဲ့ ဘာသာ prompt ပေးမိရင် ပိုမှားနိုင်တယ်)
+    stt_prompt = {"my": "ဒီအသံဖိုင်သည် မြန်မာဘာသာစကားဖြစ်သည်။",
+                  "en": "This audio is in English."}.get(stt_lang)
 if video_path and st.button("📝 Transcript ထုတ်မယ် (Whisper)"):
     audio = pipeline.extract_audio(video_path, os.path.join(WORKDIR, "audio.wav"))
     segs, lang = None, None
@@ -156,12 +160,13 @@ if video_path and st.button("📝 Transcript ထုတ်မယ် (Whisper)"):
             st.stop()
         try:
             with st.spinner("Groq Whisper နဲ့ စာသားပြောင်းနေတယ်..."):
-                segs, lang = pipeline.transcribe_groq(audio, gkey, language=stt_lang)
+                segs, lang = pipeline.transcribe_groq(audio, gkey, language=stt_lang,
+                                                      prompt=stt_prompt)
         except Exception as ex:
             st.warning(f"Groq Whisper မရ ({str(ex)[:100]}) — Local Whisper နဲ့ ပြန်စမ်းနေတယ်")
     if segs is None:
         with st.spinner("Local Whisper နဲ့ စာသားပြောင်းနေတယ်... (base model, ခဏကြာနိုင်)"):
-            segs, lang = pipeline.transcribe(audio, language=stt_lang)
+            segs, lang = pipeline.transcribe(audio, language=stt_lang, prompt=stt_prompt)
     st.session_state["transcript"] = segs
     st.session_state["transcript_lang"] = lang
     st.success(f"ပြီးပြီ — ဘာသာစကား: {lang}, {len(segs)} ပိုဒ်")
