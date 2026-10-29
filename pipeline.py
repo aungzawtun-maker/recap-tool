@@ -151,18 +151,20 @@ def place_timings(files):
 
 def build_video(video_path, files, workdir, log=print, orig_volume=0.0,
                 blur_band="none", zoom="none", pip=False, effect="none",
-                logo_path=None):
+                logo_path=None, logo_pos="top-right"):
     """Narration စီ + ဗီဒီယိုနဲ့ ပြန်ဆက်။
     ပြန်ပေးတာ: (final_path, fit_rate)။ fit_rate > 1 ဆို narration ကို
     atempo နဲ့ အမြန်တင်ထားတာ — စာတန်းအချိန်တွေကို fit_rate နဲ့
     စားမှ (start/rate, dur/rate) အသံနဲ့ ကိုက်မယ်။
     orig_volume: မူရင်းအသံ အတိုးအကျယ် (0.0 = မထည့်, 0.1/0.25/0.5/1.0)။
     blur_band: မူရင်းစာသား ရှိတဲ့နေရာ မှုန်ဝါးပေး
-      (none/top/middle/bottom — အမြင့် 20% ကြောင်း)။
+      (none/top/middle/lower/bottom — အမြင့် 20% ကြောင်း,
+      ဒါမှမဟုတ် slider က ဂဏန်း 0.0–0.8 = band အပေါ်ဆုံးနေရာ)။
     zoom: none/in (10% ချဲ့)/out (10% သေး + အနက်ကွက်)။
     pip: မှုန်နောက်ခံ + 85% ဗီဒီယို picture-in-picture။
     effect: none/mirror (မှန်ပြောင်းပြန်)/gray (အဖြူအမည်း)။
-    logo_path: အပေါ်ညာထောင့်မှာ တင်မယ့် PNG (transparent ဆို အလှဆုံး)။
+    logo_path: ဗီဒီယိုပေါ်မှာ တင်မယ့် PNG (transparent ဆို အလှဆုံး)၊
+      အကျယ် 80px; logo_pos: top-right/top-left/bottom-right/bottom-left။
     သတိ: video filter တစ်ခု ပါတာနဲ့ ဗီဒီယို ပြန် encode ရတယ်
     (မပါရင် အရင်အတိုင်း -c:v copy မြန်မြန်)။"""
     video_dur = probe_duration(video_path)
@@ -207,9 +209,14 @@ def build_video(video_path, files, workdir, log=print, orig_volume=0.0,
         n[0] += 1
         return f"v{n[0]}"
 
-    if blur_band in ("top", "middle", "bottom"):
-        y = {"top": "0", "middle": "ih*0.4", "bottom": "ih*0.8"}[blur_band]
-        yo = {"top": "0", "middle": "H*0.4", "bottom": "H*0.8"}[blur_band]
+    if blur_band != "none":
+        if isinstance(blur_band, (int, float)):
+            # slider က ဂဏန်း — band အပေါ်ဆုံးနေရာ (0.0 = အပေါ်ဆုံး)
+            y = f"ih*{float(blur_band)}"
+            yo = f"H*{float(blur_band)}"
+        else:
+            y = {"top": "0", "middle": "ih*0.4", "lower": "ih*0.6", "bottom": "ih*0.8"}[blur_band]
+            yo = {"top": "0", "middle": "H*0.4", "lower": "H*0.6", "bottom": "H*0.8"}[blur_band]
         nxt = _next()
         vf.append(f"[{cur}]split=2[base][band]")
         vf.append(f"[band]crop=iw:ih*0.2:0:{y},boxblur=lr=20:lp=2[bandb]")
@@ -242,8 +249,12 @@ def build_video(video_path, files, workdir, log=print, orig_volume=0.0,
         cur = nxt
     if logo_path and os.path.exists(logo_path):
         nxt = _next()
-        vf.append(f"[{logo_idx}:v]scale=160:-2,format=rgba[logo]")
-        vf.append(f"[{cur}][logo]overlay=W-w-10:10[{nxt}]")
+        vf.append(f"[{logo_idx}:v]scale=80:-2,format=rgba[logo]")
+        ox, oy = {"top-right": ("W-w-10", "10"),
+                  "top-left": ("10", "10"),
+                  "bottom-right": ("W-w-10", "H-h-10"),
+                  "bottom-left": ("10", "H-h-10")}[logo_pos]
+        vf.append(f"[{cur}][logo]overlay={ox}:{oy}[{nxt}]")
         cur = nxt
 
     # ---------- audio chain ----------
@@ -700,6 +711,18 @@ def translate_script(segments, source_lang, provider="openrouter", keys=None,
                          "error": f"{type(ex).__name__}: {str(ex)[:150]}"})
                     break
     raise RuntimeError("AI model တွေ အကုန် မရပါ: " + " | ".join(errors))
+
+
+def transcript_to_lines(segments):
+    """Transcript segments -> 'start | text' စာကြောင်းတွေ။
+    ဘာသာမပြန်ပဲ မူရင်းဘာသာအတိုင်း စာတန်းထိုးချင်တဲ့အခါ သုံးတယ်
+    (ဥပမာ မြန်မာစကားပြော movie ကို မြန်မာ စာတန်းထိုးတာ) —
+    AI မလို, transcript စာသားအတိုင်း ယူရုံပဲ။"""
+    out = []
+    for s, e, t in segments:
+        sec = int(s) if s == int(s) else s
+        out.append(f"{sec} | {t}")
+    return "\n".join(out)
 
 
 def translation_timings(parsed, segments):

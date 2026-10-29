@@ -194,33 +194,45 @@ if "transcript" in st.session_state:
 # ---------- ဘာသာပြန် စာတန်းထိုး (အသံမပါ) ----------
 if "transcript" in st.session_state:
     st.subheader("🌐 ဘာသာပြန် စာတန်းထိုး (အသံမပါ)")
-    st.caption("သီချင်း / ဇာတ်ကားအတို ကို မူရင်းအသံအတိုင်း ဘာသာပြန်စာတန်းထိုးမယ် — နောက်ခံစကားပြော မပါဘူး")
+    st.caption("သီချင်း / ဇာတ်ကားအတို ကို မူရင်းအသံအတိုင်း ဘာသာပြန်စာတန်းထိုးမယ်, ဒါမှမဟုတ် မူရင်းဘာသာအတိုင်း စာတန်းထိုးမယ် — နောက်ခံစကားပြော မပါဘူး")
     tr_target_label = st.selectbox(
-        "ဘာသာပြန်မယ့် ဘာသာ",
-        ["မြန်မာ", "English"],
-        help="မူရင်းဘာသာက transcript မှာ သိပြီးသား — ဒါက ပြန်မယ့် ဘာသာ")
-    tr_target = {"မြန်မာ": "my", "English": "en"}[tr_target_label]
-    tr_style_label = st.selectbox(
-        "ဘာသာပြန်ပုံစံ",
-        ["သဘာဝကျ (ဆီလျော်အောင်)", "တိုက်ရိုက်"],
-        help="သဘာဝကျ = ဖတ်လို့ကောင်း, သီချင်းဆို ဆိုလို့ကောင်း; တိုက်ရိုက် = မူရင်းစကားလုံး အတိုင်း")
-    tr_style = {"သဘာဝကျ (ဆီလျော်အောင်)": "natural", "တိုက်ရိုက်": "literal"}[tr_style_label]
-    if st.button("🌐 ဘာသာပြန်မယ် (AI)"):
-        keys = {p: k.strip() for p, k in ai_keys.items() if k.strip()}
-        if not keys:
-            st.error("Sidebar မှာ AI key တစ်ခု ထည့်ပါ (OpenRouter / Groq / NVIDIA တစ်ခုခု)")
+        "စာတန်း ဘာသာ",
+        ["မြန်မာ", "English", "မူရင်းအတိုင်း (ဘာသာမပြန်)"],
+        help="မူရင်းဘာသာက transcript မှာ သိပြီးသား — ပြန်မယ့် ဘာသာ, ဒါမှမဟုတ် မူရင်းအတိုင်း (မြန်မာ movie ကို မြန်မာ စာတန်းထိုးတာမျိုး)")
+    tr_target = {"မြန်မာ": "my", "English": "en",
+                 "မူရင်းအတိုင်း (ဘာသာမပြန်)": "same"}[tr_target_label]
+    if tr_target == "same":
+        tr_style = "natural"
+    else:
+        tr_style_label = st.selectbox(
+            "ဘာသာပြန်ပုံစံ",
+            ["သဘာဝကျ (ဆီလျော်အောင်)", "တိုက်ရိုက်"],
+            help="သဘာဝကျ = ဖတ်လို့ကောင်း, သီချင်းဆို ဆိုလို့ကောင်း; တိုက်ရိုက် = မူရင်းစကားလုံး အတိုင်း")
+        tr_style = {"သဘာဝကျ (ဆီလျော်အောင်)": "natural", "တိုက်ရိုက်": "literal"}[tr_style_label]
+    tr_btn = ("📝 Transcript ကို စာတန်းအဖြစ် ယူမယ်"
+              if tr_target == "same" else "🌐 ဘာသာပြန်မယ် (AI)")
+    if st.button(tr_btn):
+        if tr_target == "same":
+            # ဘာသာမပြန် — transcript စာသားအတိုင်း စာတန်းထိုး (AI မလို)
+            st.session_state["trans_box"] = pipeline.transcript_to_lines(
+                st.session_state["transcript"])
+            st.success("Transcript ကို စာတန်းအဖြစ် ယူပြီးပြီ (အောက်မှာ ပြင်လို့ရတယ် — Whisper မှားနေရင် ဒီမှာ ပြင်ပါ)")
         else:
-            try:
-                with st.spinner("AI က ဘာသာပြန်နေတယ်..."):
-                    trans_out, used_model = pipeline.translate_script(
-                        st.session_state["transcript"],
-                        st.session_state.get("transcript_lang", "?"),
-                        provider=ai_provider, keys=keys, model=ai_model,
-                        target=tr_target, style=tr_style)
-                    st.session_state["trans_box"] = trans_out
-                st.success(f"ဘာသာပြန် ရပြီ (သုံးတဲ့ model: {used_model}) (အောက်မှာ ပြင်လို့ရတယ်)")
-            except Exception as ex:
-                st.error(f"ဘာသာပြန် မရပါ: {ex}")
+            keys = {p: k.strip() for p, k in ai_keys.items() if k.strip()}
+            if not keys:
+                st.error("Sidebar မှာ AI key တစ်ခု ထည့်ပါ (OpenRouter / Groq / NVIDIA တစ်ခုခု)")
+            else:
+                try:
+                    with st.spinner("AI က ဘာသာပြန်နေတယ်..."):
+                        trans_out, used_model = pipeline.translate_script(
+                            st.session_state["transcript"],
+                            st.session_state.get("transcript_lang", "?"),
+                            provider=ai_provider, keys=keys, model=ai_model,
+                            target=tr_target, style=tr_style)
+                        st.session_state["trans_box"] = trans_out
+                    st.success(f"ဘာသာပြန် ရပြီ (သုံးတဲ့ model: {used_model}) (အောက်မှာ ပြင်လို့ရတယ်)")
+                except Exception as ex:
+                    st.error(f"ဘာသာပြန် မရပါ: {ex}")
 
 # ---------- အဆင့် ၃: Script ပြင်ရေး ----------
 st.subheader("✍️ Recap Script")
@@ -313,11 +325,15 @@ sub_pos_label = st.selectbox(
     ["အောက်", "အလယ်", "အပေါ်"],
     help="စာတန်း ဗီဒီယိုရဲ့ ဘယ်နေရာမှာ ပေါ်မလဲ — မူရင်းစာသား blur လုပ်ထားတဲ့နေရာနဲ့ မထပ်အောင် ရွေးပါ")
 sub_pos = {"အောက်": "bottom", "အလယ်": "middle", "အပေါ်": "top"}[sub_pos_label]
-blur_label = st.selectbox(
-    "မူရင်းစာသား ဖျောက် (blur)",
-    ["မလုပ်", "အပေါ်", "အလယ်", "အောက်"],
-    help="မူရင်း ဗီဒီယိုထဲမှာ ပါနေတဲ့ စာသား (ဥပမာ အသင့်ပါ စာတန်း) ရှိတဲ့နေရာကို မှုန်ဝါးပေးမယ် — စာသား လုံးဝ ပျောက်သွားတာမဟုတ်ဘူး, အဲဒီနေရာက မှုန်သွားရုံပဲ")
-blur_band = {"မလုပ်": "none", "အပေါ်": "top", "အလယ်": "middle", "အောက်": "bottom"}[blur_label]
+blur_on = st.checkbox("မူရင်းစာသား ဖျောက် (blur)")
+if blur_on:
+    blur_y = st.slider(
+        "Blur band နေရာ (အပေါ်က %)",
+        0, 80, 40, step=5,
+        help="Band က အမြင့် 20% ရှိတယ် — 0 = အပေါ်ဆုံး, 40 = အလယ်, 60 = အောက်လယ်, 80 = အောက်ဆုံး. မူရင်း စာတန်းရှိတဲ့နေရာကို ရွှေ့ထားပါ")
+    blur_band = blur_y / 100.0
+else:
+    blur_band = "none"
 zoom_label = st.selectbox(
     "🔍 Zoom",
     ["မလုပ်", "အထဲ (zoom in)", "အပြင် (zoom out)"],
@@ -335,13 +351,19 @@ effect = {"မလုပ်": "none", "မှန်ပြောင်းပြန
 logo_file = st.file_uploader(
     "🔖 Logo PNG",
     type=["png"],
-    help="အပေါ်ညာထောင့်မှာ တင်မယ် — အကြည် (transparent) PNG ဆို အလှဆုံး, မရှိရင် ကျော်လို့ရတယ်")
+    help="ဗီဒီယိုပေါ်မှာ တင်မယ် (အရွယ် 80px) — အကြည် (transparent) PNG ဆို အလှဆုံး, မရှိရင် ကျော်လို့ရတယ်")
+logo_pos_label = st.selectbox(
+    "🔖 Logo နေရာ",
+    ["အပေါ်-ညာ", "အပေါ်-ဘယ်", "အောက်-ညာ", "အောက်-ဘယ်"],
+    help="Logo ကို ဗီဒီယိုရဲ့ ဘယ်ထောင့်မှာ ထားမလဲ")
+logo_pos = {"အပေါ်-ညာ": "top-right", "အပေါ်-ဘယ်": "top-left",
+            "အောက်-ညာ": "bottom-right", "အောက်-ဘယ်": "bottom-left"}[logo_pos_label]
 if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", type="primary"):
     timed = None
     if mode_translate:
         trans_script = parse_script(trans_text)
         if not trans_script:
-            st.error("ဘာသာပြန် Script မရှိသေးဘူး — အရင် 🌐 ဘာသာပြန်မယ် ခလုတ် နှိပ်ပါ, ဒါမှမဟုတ် box ထဲ ကိုယ်တိုင် ရေးထည့်ပါ")
+            st.error("ဘာသာပြန် Script မရှိသေးဘူး — အရင် ဘာသာပြန်/စာတန်းယူ ခလုတ် နှိပ်ပါ, ဒါမှမဟုတ် box ထဲ ကိုယ်တိုင် ရေးထည့်ပါ")
             st.stop()
         if "transcript" not in st.session_state:
             st.error("Transcript မရှိသေးဘူး — အရင် Transcript ထုတ်ပါ")
@@ -369,7 +391,8 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
                                                     blur_band=blur_band,
                                                     zoom=zoom, pip=pip,
                                                     effect=effect,
-                                                    logo_path=logo_path)
+                                                    logo_path=logo_path,
+                                                    logo_pos=logo_pos)
     else:
         with st.spinner("TTS + ဗီဒီယို ဆက်နေတယ်... (မိနစ်ပိုင်း ကြာနိုင်တယ်)"):
             files = pipeline.tts_all(script, engine, WORKDIR,
@@ -381,7 +404,8 @@ if video_path and st.button("🎬 ဗီဒီယို ထုတ်မယ်", 
                                                     blur_band=blur_band,
                                                     zoom=zoom, pip=pip,
                                                     effect=effect,
-                                                    logo_path=logo_path)
+                                                    logo_path=logo_path,
+                                                    logo_pos=logo_pos)
     st.success("ပြီးပါပြီ! 🎉")
     st.video(final)
     with open(final, "rb") as f:
