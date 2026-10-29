@@ -124,6 +124,12 @@ stt_engine = st.sidebar.selectbox(
     }[e],
     help="Groq မရရင် Local ကို အလိုအလျောက် ပြန်ပြောင်းစမ်းပေးမယ်",
 )
+stt_lang_label = st.sidebar.selectbox(
+    "Transcript ဘာသာ",
+    ["အလိုအလျောက်", "မြန်မာ", "English"],
+    help="သီချင်းမှာ Whisper က ဘာသာစကား မှားသိပြီး Latin စာနဲ့ ထွက်တတ်တယ် — မြန်မာသီချင်းဆို မြန်မာ ကို ရွေးပါ (မှားတဲ့ ဘာသာ ရွေးမိရင် ပိုမှားနိုင်တယ်)",
+)
+stt_lang = {"အလိုအလျောက်": None, "မြန်မာ": "my", "English": "en"}[stt_lang_label]
 
 # ---------- အဆင့် ၁: ဗီဒီယို upload ----------
 uploaded = st.file_uploader("ဗီဒီယို ဖိုင် တင်ပါ (mp4)", type=["mp4", "mov", "mkv"])
@@ -146,12 +152,12 @@ if video_path and st.button("📝 Transcript ထုတ်မယ် (Whisper)"):
             st.stop()
         try:
             with st.spinner("Groq Whisper နဲ့ စာသားပြောင်းနေတယ်..."):
-                segs, lang = pipeline.transcribe_groq(audio, gkey)
+                segs, lang = pipeline.transcribe_groq(audio, gkey, language=stt_lang)
         except Exception as ex:
             st.warning(f"Groq Whisper မရ ({str(ex)[:100]}) — Local Whisper နဲ့ ပြန်စမ်းနေတယ်")
     if segs is None:
         with st.spinner("Local Whisper နဲ့ စာသားပြောင်းနေတယ်... (base model, ခဏကြာနိုင်)"):
-            segs, lang = pipeline.transcribe(audio)
+            segs, lang = pipeline.transcribe(audio, language=stt_lang)
     st.session_state["transcript"] = segs
     st.session_state["transcript_lang"] = lang
     st.success(f"ပြီးပြီ — ဘာသာစကား: {lang}, {len(segs)} ပိုဒ်")
