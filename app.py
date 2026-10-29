@@ -124,12 +124,6 @@ stt_engine = st.sidebar.selectbox(
     }[e],
     help="Groq မရရင် Local ကို အလိုအလျောက် ပြန်ပြောင်းစမ်းပေးမယ်",
 )
-stt_lang_label = st.sidebar.selectbox(
-    "Transcript ဘာသာ",
-    ["အလိုအလျောက်", "မြန်မာ", "English"],
-    help="သီချင်းမှာ Whisper က ဘာသာစကား မှားသိပြီး Latin စာနဲ့ ထွက်တတ်တယ် — မြန်မာသီချင်းဆို မြန်မာ ကို ရွေးပါ (မှားတဲ့ ဘာသာ ရွေးမိရင် ပိုမှားနိုင်တယ်)",
-)
-stt_lang = {"အလိုအလျောက်": None, "မြန်မာ": "my", "English": "en"}[stt_lang_label]
 
 # ---------- အဆင့် ၁: ဗီဒီယို upload ----------
 uploaded = st.file_uploader("ဗီဒီယို ဖိုင် တင်ပါ (mp4)", type=["mp4", "mov", "mkv"])
@@ -142,6 +136,16 @@ if uploaded:
     st.success(f"ဗီဒီယို ရပြီ — အရှည် {pipeline.probe_duration(video_path):.1f} စက္ကန့်")
 
 # ---------- အဆင့် ၂: Transcript ----------
+if video_path:
+    # ဘာသာ ရွေးတာကို Transcript ခလုတ်နားမှာပဲ ထားတယ် — sidebar ထဲမှာ
+    # ဝှက်နေရင် ဖုန်းမှာ သတိမထားမိလို့ (သီချင်းမှာ Whisper က ဘာသာစကား
+    # မှားသိပြီး Latin/ကိုရီးယားစာနဲ့ ထွက်တတ်လို့ မြန်မာသီချင်းဆို မြန်မာ ရွေးပါ)
+    stt_lang_label = st.selectbox(
+        "Transcript ဘာသာ",
+        ["အလိုအလျောက်", "မြန်မာ", "English"],
+        help="မြန်မာသီချင်းဆို မြန်မာ ကို ရွေးပါ (မှားတဲ့ ဘာသာ ရွေးမိရင် ပိုမှားနိုင်တယ်)",
+    )
+    stt_lang = {"အလိုအလျောက်": None, "မြန်မာ": "my", "English": "en"}[stt_lang_label]
 if video_path and st.button("📝 Transcript ထုတ်မယ် (Whisper)"):
     audio = pipeline.extract_audio(video_path, os.path.join(WORKDIR, "audio.wav"))
     segs, lang = None, None
